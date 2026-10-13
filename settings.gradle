@@ -1,0 +1,19 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'kizuna-meridian-ui-addon'
+include 'client', 'server'
+
+// 框架尚未发布 Maven 产物，直接组合独立仓库构建以复用其唯一协议源。
+def frameworkDirectory = providers.gradleProperty('meridianFrameworkDir')
+        .getOrElse('../Kizuna-Meridian-Mod-Framework')
+includeBuild(frameworkDirectory) {
+    dependencySubstitution {
+        substitute module('local.meridian:client') using project(':client')
+        substitute module('local.meridian:server') using project(':server')
+    }
+}

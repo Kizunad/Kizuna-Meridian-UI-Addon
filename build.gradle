@@ -1,0 +1,40 @@
+plugins {
+    id 'base'
+}
+
+allprojects {
+    group = 'dev.kizuna.meridian.ui'
+    version = '0.1.0-SNAPSHOT'
+}
+
+subprojects {
+    apply plugin: 'java-library'
+
+    repositories {
+        mavenCentral()
+    }
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(17)
+        }
+    }
+    base.archivesName = "${rootProject.name}-${project.name}"
+    tasks.withType(JavaCompile).configureEach {
+        options.release = 17
+        options.encoding = 'UTF-8'
+    }
+    tasks.withType(Jar).configureEach {
+        // 附属只分发自身内容；对应框架和 Protobuf 运行库由宿主提供。
+        from(rootProject.files('LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'))
+    }
+}
+
+tasks.named('assemble') {
+    dependsOn ':client:assemble', ':server:assemble'
+}
+tasks.named('check') {
+    dependsOn ':client:check', ':server:check'
+}
+tasks.named('clean') {
+    dependsOn ':client:clean', ':server:clean'
+}

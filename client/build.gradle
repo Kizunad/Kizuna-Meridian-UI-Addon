@@ -1,0 +1,6 @@
+description = '经脉操作界面的客户端工程骨架。'
+
+dependencies {
+    // 仅引用 protoc 消息；local.meridian 是 composite build 替换键。
+    compileOnlyApi 'local.meridian:client'
+}

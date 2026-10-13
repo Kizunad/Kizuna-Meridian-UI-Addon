@@ -1,0 +1,6 @@
+description = '界面请求与可信宿主之间的桥接工程骨架。'
+
+dependencies {
+    // 宿主提供实际核心实例，UI 附属不内嵌或另行创建权威账本。
+    compileOnlyApi 'local.meridian:server'
+}
