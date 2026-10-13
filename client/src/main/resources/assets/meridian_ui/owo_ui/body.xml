@@ -7,7 +7,7 @@
                 <padding><all>6</all></padding>
                 <gap>5</gap>
                 <children>
-                    <label id="body-title"><text>身体 · 分层装配</text><color>#FFE8D9AD</color></label>
+                    <label id="body-title"><text>身体 · 只读预览</text><color>#FFE8D9AD</color></label>
                     <flow-layout direction="horizontal">
                         <sizing><horizontal method="fill">100</horizontal><vertical method="fill">88</vertical></sizing>
                         <gap>6</gap>

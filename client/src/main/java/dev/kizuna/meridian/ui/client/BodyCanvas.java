@@ -9,7 +9,6 @@ import io.wispforest.owo.ui.core.Sizing;
 import net.minecraft.client.render.*;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
-import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -30,8 +29,7 @@ public final class BodyCanvas extends BaseComponent {
     private final ModelPreviewCamera camera = new ModelPreviewCamera();
     private final Box bounds;
     private List<BodyVisual> visible = List.of();
-    private final Map<String, List<LitFace>> faces = new HashMap<>();
-    private final Map<String, Identifier> textures = new HashMap<>();
+    private final Map<String, BodyMesh> meshes = new HashMap<>();
     private String selectedId = "";
     private long previousFrame;
     private double draggedPixels;
@@ -47,32 +45,12 @@ public final class BodyCanvas extends BaseComponent {
         sizing(Sizing.fill(100), Sizing.fill(100));
         camera.focus(new Vec3d(0.5, 0.5, 0.5), 1, 0, 0, false);
         camera.settle();
-        cacheGeometry(scene);
     }
 
-    private void cacheGeometry(BodyScene scene) {
-        // 静态模型的法线亮度只算一次；相机逐帧插值无需反复创建向量和贴图标识。
-        for (BodyVisual node : scene.presentation().getVisualsList()) {
-            var litFaces = new ArrayList<LitFace>();
-            for (int index = 0; index < node.getTrianglesCount(); index += 3) {
-                int first = node.getTriangles(index);
-                int second = node.getTriangles(index + 1);
-                int third = node.getTriangles(index + 2);
-                ModelPoint a = node.getVertices(first), b = node.getVertices(second), c = node.getVertices(third);
-                Vector3f normal = new Vector3f(b.getX() - a.getX(), b.getY() - a.getY(), b.getZ() - a.getZ())
-                        .cross(c.getX() - a.getX(), c.getY() - a.getY(), c.getZ() - a.getZ());
-                float light = 0.65f;
-                if (normal.lengthSquared() > 0.000000001f) {
-                    normal.normalize();
-                    light += 0.35f * Math.abs(normal.dot(0.25f, 0.65f, 0.7f));
-                }
-                litFaces.add(new LitFace(first, second, third, light));
-            }
-            faces.put(node.getId(), List.copyOf(litFaces));
-            if (!node.getTextureResource().isEmpty()) {
-                textures.put(node.getId(), new Identifier(node.getTextureResource()));
-            }
-        }
+    public void dispose() {
+        // 只有实际看过的对象持有 GPU 缓冲，窗口关闭时统一释放。
+        meshes.values().forEach(BodyMesh::close);
+        meshes.clear();
     }
 
     public void visible(List<BodyVisual> nodes) {
@@ -140,19 +118,7 @@ public final class BodyCanvas extends BaseComponent {
         RenderSystem.enableDepthTest();
         RenderSystem.disableCull();
         try {
-            BufferBuilder buffer = Tessellator.getInstance().getBuffer();
             for (BodyVisual node : visible) {
-                // 每个对象选择其内容包材质；纯色对象继续使用原有无贴图绘制路径。
-                Identifier texture = textures.get(node.getId());
-                boolean textured = texture != null;
-                if (textured) {
-                    RenderSystem.setShader(GameRenderer::getPositionTexColorProgram);
-                    RenderSystem.setShaderTexture(0, texture);
-                    buffer.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_TEXTURE_COLOR);
-                } else {
-                    RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-                    buffer.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
-                }
                 // 选中时降低其他对象亮度，密集交织的线状模型仍能看清完整主干与支路。
                 int color = node.getColorRgb();
                 float emphasis = 1;
@@ -161,13 +127,9 @@ public final class BodyCanvas extends BaseComponent {
                 } else if (!selectedId.isEmpty()) {
                     emphasis = 0.4f;
                 }
-                for (LitFace face : faces.get(node.getId())) {
-                    float brightness = face.light() * emphasis;
-                    drawVertex(buffer, matrix, node, face.first(), textured, color, brightness);
-                    drawVertex(buffer, matrix, node, face.second(), textured, color, brightness);
-                    drawVertex(buffer, matrix, node, face.third(), textured, color, brightness);
-                }
-                BufferRenderer.drawWithGlobalProgram(buffer.end());
+                // 相机矩阵直接交给 GPU，静态顶点不再逐帧复制或创建转换向量。
+                BodyMesh mesh = meshes.computeIfAbsent(node.getId(), id -> new BodyMesh(node, true));
+                mesh.draw(matrix, color, emphasis, 255);
             }
         } finally {
             // 画布退出后恢复 UI 所需渲染状态，避免影响旁边的文字和窗口。
@@ -176,21 +138,6 @@ public final class BodyCanvas extends BaseComponent {
             context.disableScissor();
         }
     }
-
-    private static void drawVertex(BufferBuilder buffer, Matrix4f matrix, BodyVisual node,
-                                   int index, boolean textured, int color, float brightness) {
-        // UV 和命中使用同一份顶点；高亮乘在原贴图上，保留肌束与器官表面细节。
-        ModelPoint vertex = node.getVertices(index);
-        buffer.vertex(matrix, vertex.getX(), vertex.getY(), vertex.getZ());
-        if (textured) {
-            ModelUv uv = node.getTextureUv(index);
-            buffer.texture(uv.getU(), uv.getV());
-        }
-        buffer.color((int) (((color >> 16) & 255) * brightness),
-                (int) (((color >> 8) & 255) * brightness), (int) ((color & 255) * brightness), 255).next();
-    }
-
-    private record LitFace(int first, int second, int third, float light) {}
 
     public BodyVisual pick(double mouseX, double mouseY) {
         // 对投影后的真实三角面求重心坐标，选择最靠近观察者的可见面。

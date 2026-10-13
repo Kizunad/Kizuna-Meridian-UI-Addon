@@ -1,0 +1,8 @@
+{
+  "breathing.inhale": {
+    "sounds": ["meridian_ui:breathing/inhale"]
+  },
+  "breathing.exhale": {
+    "sounds": ["meridian_ui:breathing/exhale"]
+  }
+}

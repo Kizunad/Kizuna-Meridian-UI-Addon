@@ -68,6 +68,14 @@ public final class BodyScene {
             }
             validateTexture(node);
         }
+        if (presentation.hasBreathing()) {
+            // 入口属于内容模型，先校验所在层与坐标；动画挂点交给对应动画适配器确认。
+            BreathingPresentation breathing = presentation.getBreathing();
+            if (!layers.contains(breathing.getSurfaceLayer()) || !breathing.hasIntakePoint()) {
+                throw UiErrors.invalid(UiErrors.INVALID_BREATHING_PRESENTATION);
+            }
+            finite(breathing.getIntakePoint());
+        }
     }
 
     private static void validateTexture(BodyVisual node) {

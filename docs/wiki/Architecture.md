@@ -7,26 +7,26 @@
 | Meridian Mod Framework | 身体规则、真元账本、受校验请求与结果 | 持有并计算 |
 | Inventory UI Framework | 客户端窗口、HUD、消息协商与服务端公共路由 | 不持有身体账本 |
 | Human 及其他生物 Addon | 身体定义、固有配方、具体模型、经脉路径及对象映射 | 由框架统一保存实例 |
-| UI Addon client | 通用模型查看、分层选择、镜头聚焦和身体信息投影 | 仅显示权威快照 |
+| UI Addon client | 只读身体预览、独立修炼窗口及聚气意图提交 | 仅显示权威快照 |
 | UI Addon server | 对接宿主身份、请求路由与框架处理器 | 复用宿主已有核心 |
 | 可选 3D 内景 Addon | 在三维空间编辑同类真元操作 | 共用相同权威规则 |
 
 UI Addon 必须同时依赖 Meridian Mod Framework 与 Inventory UI Framework：前者定义身体规则及业务消息，后者提供窗口和公共消息路由。两个框架之间由本附属桥接，不要求它们反向依赖本包。
 
-UI 面向通用身体数据，不强制依赖 Human。器官数量、经脉名称、身体连接与可执行配方由已安装内容和宿主数据提供。窗口已通过 Inventory UI Framework 的公开 API 注册；经脉业务消息复用 Meridian Protobuf，消息协商与传输计划复用 Inventory UI Protobuf，具体网络桥接尚未实现。
+UI 面向通用身体数据，不强制依赖 Human。器官数量、经脉名称、身体连接与可执行配方由已安装内容和宿主数据提供。窗口通过 Inventory UI Framework 的公开 API 注册；经脉业务消息复用 Meridian Protobuf，消息协商与传输复用 Inventory UI Protobuf。单轮聚气已有可注册的公共路由桥接，实际玩家和世界绑定仍由宿主提供。
 
 ## 界面方向
 
-首片采用 XML + owo-ui，完成只读身体查看器。生物内容提供模型、分层、UV 贴图及身体 ID 绑定；左侧自绘勾选框可同时显示多个层，点击模型后高亮、聚焦，右侧展示介绍与权威数值。骨骼模型目前绑定到部位，因此显示部位 HP，不虚构独立骨骼数值。
+界面采用 XML + owo-ui，身体与修炼分别注册为独立窗口。身体仅作只读预览：生物内容提供模型、分层、UV 贴图及身体 ID 绑定；左侧自绘勾选框可同时显示多个层，点击模型后高亮、聚焦，右侧展示介绍与权威数值。骨骼模型目前绑定到部位，因此显示部位 HP，不虚构独立骨骼数值。
 
-后续简易操作流程为：
+修炼窗口提供独立吐纳场景，不依赖身体窗口的选择。两个窗口共享同一权威快照与宿主任务；关窗结束主动气流，已入账加工与在途继续。当前手动吐纳遵循以下流程：
 
 1. 读取宿主授权的身体快照与当前修订。
-2. 玩家选择摄入器官、加工配方或已存在的运输连接。
-3. UI 构造框架 Protobuf 请求，交给宿主执行。
+2. 玩家开始吐纳，按住左键吸气、右键呼气并瞄准游离灵气。
+3. UI 构造方向与瞄准的 Protobuf 意图，由宿主判定捕获并选择可信小批配方与通路。
 4. 显示成功或拒绝原因，刷新权威状态并提供调整入口。
 
-现有协议提供 `GetBodySnapshot`、`GetTissueCapability`、`IntakeQi`、`StartOrganRecipe`、`TransportQi` 等入口。器官配方完整目录的客户端同步、可发现的操作能力及真实网络桥接仍需后续接入设计，不能仅凭客户端硬编码视为已完成。
+现有协议提供 `GetBodySnapshot`、`GetTissueCapability`、`IntakeQi`、`StartOrganRecipe`、`TransportQi` 等入口。[吐纳](Gathering.md)通过 `GatheringRequest.breath` 提交操作，`BreathingView` 返回空气、两项消耗与场景粒子，UI 按结果刷新。配方与呼吸能力由可信生物内容提供。
 
 ## 交互约束
 

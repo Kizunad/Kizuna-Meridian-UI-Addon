@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<owo-ui>
+    <templates>
+        <cultivation-panel>
+            <flow-layout direction="vertical">
+                <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+            </flow-layout>
+        </cultivation-panel>
+    </templates>
+</owo-ui>

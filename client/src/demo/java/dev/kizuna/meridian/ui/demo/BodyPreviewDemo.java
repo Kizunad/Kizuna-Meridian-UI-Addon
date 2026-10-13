@@ -6,6 +6,7 @@ import dev.kizuna.meridian.human.server.HumanBirth;
 import dev.kizuna.meridian.human.server.HumanContent;
 import dev.kizuna.meridian.human.client.HumanPresentation;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
+import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathParticle;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
 import dev.kizuna.meridian.ui.client.*;
 import net.fabricmc.api.ClientModInitializer;
@@ -15,6 +16,8 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.AccessibilityOnboardingScreen;
 import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.util.ScreenshotRecorder;
+import net.minecraft.client.sound.SoundInstance;
+import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.model.Dilation;
 import net.minecraft.client.model.TexturedModelData;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
@@ -29,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import io.wispforest.owo.ui.core.Component;
+import io.wispforest.owo.ui.component.LabelComponent;
 
 /** 独立演示和整体交互验收；人体依赖及初始化不会进入生产 UI JAR。 */
 public final class BodyPreviewDemo implements ClientModInitializer {
@@ -39,6 +43,12 @@ public final class BodyPreviewDemo implements ClientModInitializer {
     private BodySnapshot snapshot;
     private byte[] original;
     private final boolean smoke = Boolean.getBoolean("meridian.ui.smoke");
+    private final boolean gatheringSmoke = Boolean.getBoolean("meridian.ui.gatheringSmoke");
+    private GatheringPreviewHost gatheringHost;
+    private int gatheringTicks;
+    private double acquiredBeforeRenewal;
+    private SoundInstance lastBreathingSound;
+    private final Set<String> heardBreathingSounds = new java.util.HashSet<>();
 
     @Override
     public void onInitializeClient() {
@@ -55,7 +65,7 @@ public final class BodyPreviewDemo implements ClientModInitializer {
     private void tick(MinecraftClient client) throws Exception {
         // 超时不会写成功标记，保留崩溃现场以定位资源或窗口失败。
         totalTicks++;
-        if (smoke && totalTicks > 1000) {
+        if ((smoke || gatheringSmoke) && totalTicks > 1000) {
             throw new IllegalStateException("模型验收超时");
         }
         if (client.currentScreen instanceof AccessibilityOnboardingScreen) {
@@ -76,6 +86,18 @@ public final class BodyPreviewDemo implements ClientModInitializer {
             runtime.openWorkspace();
             runtime.open("meridian_ui:body", null);
             opened = true;
+            if (gatheringSmoke) {
+                // 实际声音管理器的回调用于检查资源播放与窗口清理，不绕过声音系统。
+                client.getSoundManager().registerListener((sound, sounds) -> {
+                    if (sound.getId().getNamespace().equals("meridian_ui")) {
+                        lastBreathingSound = sound;
+                        heardBreathingSounds.add(sound.getId().getPath());
+                    }
+                });
+            }
+            if (!smoke) {
+                gatheringHost = new GatheringPreviewHost(snapshot, module);
+            }
             if (smoke) {
                 verifyVanillaShape();
             } else {
@@ -89,8 +111,16 @@ public final class BodyPreviewDemo implements ClientModInitializer {
                 } else {
                     module.panel().layer(preview);
                 }
+                runtime.open("meridian_ui:cultivation", null);
             }
-            System.out.println("MERIDIAN_PREVIEW_READY: textured Blockbench assembly, independent eyes and layer checkboxes; interactive=" + !smoke);
+            System.out.println("MERIDIAN_PREVIEW_READY: manual breathing, meditation animation and read-only body preview; interactive=" + !smoke);
+        }
+        if (gatheringHost != null) {
+            gatheringHost.tick(++gatheringTicks * 50L);
+            if (gatheringSmoke) {
+                verifyGathering(client);
+                return;
+            }
         }
         if (!opened || !smoke) {
             return;
@@ -209,6 +239,7 @@ public final class BodyPreviewDemo implements ClientModInitializer {
             module.panel().overview();
         }
         if (ticks == 410) {
+            verifyVisibleGeometry(client);
             capture(client, "body-assembly.png");
             module.panel().setLayerVisible("muscles", false);
             module.panel().setLayerVisible("meridians", false);
@@ -228,6 +259,223 @@ public final class BodyPreviewDemo implements ClientModInitializer {
                     "Blockbench textures; vanilla player shape; multi-layer checkboxes; assembled eye click; all 15 organs and 36 meridians selectable; stable refresh; hidden selection cleared; empty layers; unchanged body; window cleanup\n");
             client.scheduleStop();
         }
+    }
+
+    private void verifyGathering(MinecraftClient client) throws Exception {
+        // 同一个真实窗口反复吸气、呼气，验证首见提示、肺容量、成本、守恒与关闭清理。
+        if (gatheringTicks == 10) {
+            if (module.panel().root().childById(Component.class, "breathing-start") != null) {
+                throw new IllegalStateException("身体窗口仍存在修炼操作");
+            }
+            verifyBreathingControls();
+            capture(client, "breathing-ready.png");
+            clickCultivation(client, "breathing-start");
+        }
+        if (gatheringTicks == 20) {
+            capture(client, "breathing-tutorial.png");
+            clickCultivation(client, "breathing-start");
+            if (!gatheringHost.view().getBreathing().getActive()) {
+                throw new IllegalStateException("没有进入主动吐纳");
+            }
+        }
+        if (gatheringTicks == 22) {
+            // 经过 Screen 的中键拖动验证旋转；相机变化不修改权威粒子坐标或气息预算。
+            var canvas = module.cultivationPanel().canvas();
+            var particle = gatheringHost.view().getBreathing().getParticles(0);
+            var before = canvas.projectParticle(particle);
+            double mouseX = canvas.x() + canvas.width() * .5;
+            double mouseY = canvas.y() + canvas.height() * .5;
+            client.currentScreen.mouseClicked(mouseX, mouseY, 2);
+            client.currentScreen.mouseDragged(mouseX + 85, mouseY + 18, 2, 85, 18);
+            client.currentScreen.mouseReleased(mouseX + 85, mouseY + 18, 2);
+            if (before.distance(canvas.projectParticle(particle)) < .01) {
+                throw new IllegalStateException("中键拖动没有改变三维粒子投影");
+            }
+        }
+        if (gatheringTicks == 25) {
+            capture(client, "breathing-orbit.png");
+        }
+        if (gatheringTicks >= 30 && gatheringTicks <= 125 && gatheringTicks % 5 == 0) {
+            steerBreath(client, 0);
+        }
+        if (gatheringTicks == 75) {
+            if (lastBreathingSound == null || !client.getSoundManager().isPlaying(lastBreathingSound)) {
+                throw new IllegalStateException("有效吸气没有播放呼吸音效");
+            }
+            capture(client, "breathing-inhale.png");
+        }
+        if (gatheringTicks == 130) {
+            var breath = gatheringHost.view().getBreathing();
+            if (Math.abs(breath.getAirLiters() - breath.getCapacityLiters()) > .001) {
+                throw new IllegalStateException("持续吸气未被肺容量边界截断：" + breath);
+            }
+            capture(client, "breathing-full.png");
+            client.currentScreen.mouseReleased(0, 0, 0);
+        }
+        if (gatheringTicks >= 140 && gatheringTicks <= 235 && gatheringTicks % 5 == 0) {
+            steerBreath(client, 1);
+        }
+        if (gatheringTicks == 180) {
+            capture(client, "breathing-exhale.png");
+        }
+        if (gatheringTicks == 240) {
+            if (gatheringHost.view().getBreathing().getAirLiters() > .001) {
+                throw new IllegalStateException("持续呼气没有排空并停止");
+            }
+            client.currentScreen.mouseReleased(0, 0, 1);
+        }
+        if (gatheringTicks == 245 && client.getSoundManager().isPlaying(lastBreathingSound)) {
+            throw new IllegalStateException("排空或松键后呼吸音效没有停止");
+        }
+        if (gatheringTicks >= 250 && gatheringTicks <= 300 && gatheringTicks % 5 == 0) {
+            steerBreath(client, 0);
+        }
+        if (gatheringTicks == 305) {
+            clickCultivation(client, "breathing-start");
+            closeWindow("meridian_ui:cultivation_window");
+        }
+        if (gatheringTicks == 330) {
+            if (client.getSoundManager().isPlaying(lastBreathingSound)
+                    || !heardBreathingSounds.containsAll(Set.of("breathing.inhale", "breathing.exhale"))) {
+                throw new IllegalStateException("吸呼音效未完整播放或关窗后仍在播放");
+            }
+            var breath = gatheringHost.view().getBreathing();
+            if (breath.getActive() || breath.getAbsorbedQi() <= 0
+                    || breath.getStaminaRatio() >= 1 || breath.getAttentionRatio() >= 1
+                    || Math.abs(gatheringHost.conservedQi() - 100.36) > 1e-9) {
+                throw new IllegalStateException("手动吐纳未扣费、关窗未停止或真元不守恒：" + breath);
+            }
+            if (gatheringHost.view().getBody().getMeridianStatesList().stream()
+                    .filter(value -> value.getId().endsWith("lung_meridian"))
+                    .mapToDouble(value -> value.getLumenQi().getEntriesList().stream()
+                            .mapToDouble(Qi::getAmount).sum()).sum() <= .02) {
+                throw new IllegalStateException("捕获的灵气没有炼化并入脉");
+            }
+            closeWindow("meridian_ui:body_window");
+            InventoryUiClient.runtime().open("meridian_ui:cultivation", null);
+        }
+        if (gatheringTicks == 345) {
+            capture(client, "breathing-independent.png");
+            if (module.panel() != null || module.cultivationPanel() == null) {
+                throw new IllegalStateException("修炼不能独立打开");
+            }
+            acquiredBeforeRenewal = gatheringHost.view().getBreathing().getAbsorbedQi();
+        }
+        if (gatheringTicks == 360) {
+            // 同进程已确认过教学，重开只点一次启动；继续真实鼠标操作跨过环境窗口。
+            clickCultivation(client, "breathing-start");
+        }
+        if (gatheringTicks == 370 && !gatheringHost.view().getBreathing().getActive()) {
+            throw new IllegalStateException("重开窗口后无法再次开始吐纳");
+        }
+        if (gatheringTicks >= 380 && gatheringTicks <= 690 && gatheringTicks % 5 == 0) {
+            var breath = gatheringHost.view().getBreathing();
+            int button = breath.getAction() == dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathAction.EXHALE ? 1 : 0;
+            if (breath.getAirLiters() <= .001) {
+                button = 0;
+            } else if (breath.getAirLiters() >= breath.getCapacityLiters() - .001) {
+                button = 1;
+            }
+            steerBreath(client, button);
+        }
+        if (gatheringTicks == 700) {
+            var breath = gatheringHost.view().getBreathing();
+            if (!breath.getActive() || breath.getFailureValue() != 0 || breath.getAbsorbedQi() <= acquiredBeforeRenewal
+                    || Math.abs(gatheringHost.conservedQi() - 100.36) > 1e-9) {
+                throw new IllegalStateException("跨环境续窗的重复吐纳失败：" + breath);
+            }
+            clickCultivation(client, "breathing-start");
+            capture(client, "breathing-renewed.png");
+        }
+        if (gatheringTicks == 715) {
+            InventoryUiClient.runtime().workspace().disconnect();
+            Files.writeString(client.runDirectory.toPath().resolve("gathering-smoke-ok.txt"),
+                    "场景内叠加布局与资源悬浮；吸呼音效播放与停止；首见教学；真实鼠标反复吸呼；空气上下限；两项权威消耗；环境身体守恒；关窗停止；独立窗口；跨环境续窗。\n");
+            client.scheduleStop();
+        }
+    }
+
+    private void verifyBreathingControls() {
+        // 通过实际布局检查四个控件都叠在三维画面内部，并保留场景中央的输入区域。
+        var panel = module.cultivationPanel();
+        var root = panel.root();
+        var canvas = panel.canvas();
+        Component air = root.childById(Component.class, "breathing-air");
+        Component reserve = root.childById(Component.class, "breathing-reserve");
+        Component action = root.childById(Component.class, "breathing-start");
+        Component qi = root.childById(Component.class, "breathing-qi");
+        for (Component control : List.of(air, reserve, action, qi)) {
+            if (control.width() <= 0 || control.height() <= 0
+                    || control.x() < canvas.x() || control.y() < canvas.y()
+                    || control.x() + control.width() > canvas.x() + canvas.width()
+                    || control.y() + control.height() > canvas.y() + canvas.height()
+                    || control.zIndex() <= canvas.zIndex()) {
+                throw new IllegalStateException("吐纳控件未叠在三维场景内部：" + control.id());
+            }
+        }
+
+        // 底边提示占最后 18 像素，按钮需在其上方；肺和纳入量分别靠左右下角。
+        int centerX = canvas.x() + canvas.width() / 2;
+        int bottomY = canvas.y() + canvas.height();
+        if (canvas.x() != root.x() || canvas.y() != root.y()
+                || canvas.width() != root.width() || canvas.height() != root.height()
+                || reserve.y() != canvas.y() + 12
+                || air.x() != canvas.x() + 12 || air.y() + air.height() != bottomY - 12
+                || qi.x() + qi.width() != canvas.x() + canvas.width() - 12
+                || qi.y() + qi.height() != bottomY - 12
+                || Math.abs(action.x() + action.width() / 2 - centerX) > 1
+                || action.y() + action.height() != bottomY - 34
+                || reserve.tooltip().size() != 3 || qi.tooltip().size() != 2) {
+            throw new IllegalStateException("吐纳控件位置或资源悬浮明细不完整");
+        }
+        if (root.childAt(centerX, canvas.y() + canvas.height() / 2) != canvas
+                || root.childAt(action.x() + action.width() / 2, action.y() + action.height() / 2) != action) {
+            throw new IllegalStateException("场景旋转或按钮输入被叠加控件遮挡");
+        }
+    }
+
+    private void steerBreath(MinecraftClient client, int button) {
+        // 鼠标对准三维相机中的真实粒子，避开叠加控件，仍经过真实 Screen 输入链。
+        var canvas = module.cultivationPanel().canvas();
+        Comparator<BreathParticle> distanceToIntake = Comparator.comparingDouble(particle ->
+                Math.pow(particle.getX() - .5, 2) + Math.pow(particle.getY() - .4, 2)
+                        + Math.pow(particle.getZ() - .5, 2));
+        // 吸气引导近处灵气，呼气朝远处吹，避免每次排气都把刚拉近的目标推走。
+        if (button == 1) {
+            distanceToIntake = distanceToIntake.reversed();
+        }
+        var particle = gatheringHost.view().getBreathing().getParticlesList().stream()
+                .filter(value -> {
+                    var point = canvas.projectParticle(value);
+                    if (point.x <= .08 || point.x >= .92 || point.y <= .08 || point.y >= .85
+                            || point.z <= -1 || point.z >= 1) {
+                        return false;
+                    }
+                    int mouseX = (int) (canvas.x() + point.x * canvas.width());
+                    int mouseY = (int) (canvas.y() + point.y * canvas.height());
+                    return module.cultivationPanel().root().childAt(mouseX, mouseY) == canvas;
+                })
+                .min(distanceToIntake)
+                .orElseThrow();
+        var point = canvas.projectParticle(particle);
+        double mouseX = canvas.x() + point.x * canvas.width();
+        double mouseY = canvas.y() + point.y * canvas.height();
+        client.currentScreen.mouseClicked(mouseX, mouseY, button);
+    }
+
+    private void clickCultivation(MinecraftClient client, String id) {
+        // 经过真实 Screen 事件链验证操作位置，避免直接调用面板方法绕过布局问题。
+        Component action = module.cultivationPanel().root().childById(Component.class, id);
+        double mouseX = action.x() + action.width() / 2.0;
+        double mouseY = action.y() + action.height() / 2.0;
+        client.currentScreen.mouseClicked(mouseX, mouseY, 0);
+        client.currentScreen.mouseReleased(mouseX, mouseY, 0);
+    }
+
+    private void closeWindow(String windowType) {
+        // 使用公共窗口生命周期，验证组件清理而不直接清空模块引用。
+        var windows = InventoryUiClient.runtime().workspace().windows();
+        windows.close(windows.key(windowType, "singleton"));
     }
 
     private void verifyLayerCheckboxes(MinecraftClient client) {
@@ -419,5 +667,33 @@ public final class BodyPreviewDemo implements ClientModInitializer {
     private static void capture(MinecraftClient client, String name) {
         // 保存每一层的真实游戏截图，便于核验遮挡、坐标和信息可读性。
         ScreenshotRecorder.saveScreenshot(client.runDirectory, name, client.getFramebuffer(), message -> {});
+    }
+
+    private void verifyVisibleGeometry(MinecraftClient client) {
+        // CPU 命中测试无法发现 GPU 矩阵裁剪错误，需检查画布中确实产生了模型像素。
+        BodyCanvas canvas = module.panel().canvas();
+        double scale = client.getWindow().getScaleFactor();
+        int left = (int) ((canvas.x() + 8) * scale);
+        int top = (int) ((canvas.y() + 8) * scale);
+        int right = (int) ((canvas.x() + canvas.width() - 8) * scale);
+        int bottom = (int) ((canvas.y() + canvas.height() - 8) * scale);
+        int modelPixels = 0;
+        try (NativeImage image = ScreenshotRecorder.takeScreenshot(client.getFramebuffer())) {
+            for (int y = top; y < bottom; y += 2) {
+                for (int x = left; x < right; x += 2) {
+                    int color = image.getColor(x, y);
+                    int red = color & 255;
+                    int green = color >> 8 & 255;
+                    int blue = color >> 16 & 255;
+                    int difference = Math.abs(red - 19) + Math.abs(green - 31) + Math.abs(blue - 37);
+                    if (difference > 30) {
+                        modelPixels++;
+                    }
+                }
+            }
+        }
+        if (modelPixels < (right - left) * (bottom - top) / 4000) {
+            throw new IllegalStateException("模型可以被选中但没有绘制到身体画布");
+        }
     }
 }
