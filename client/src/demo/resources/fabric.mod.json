@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "meridian_ui_demo",
+  "version": "0.1.0",
+  "name": "Meridian Body Preview Demo",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "environment": "client",
+  "entrypoints": {"client": ["dev.kizuna.meridian.ui.demo.BodyPreviewDemo"]},
+  "depends": {"meridian_ui": "*"}
+}

@@ -1,6 +1,7 @@
 description = '界面请求与可信宿主之间的桥接工程骨架。'
 
 dependencies {
-    // 宿主提供实际核心实例，UI 附属不内嵌或另行创建权威账本。
+    // 公共路由接收请求，经脉核心执行校验；两者均复用宿主已有实例。
     compileOnlyApi 'local.meridian:server'
+    compileOnlyApi 'local.inventory-ui:server'
 }

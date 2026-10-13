@@ -1,5 +1,6 @@
 plugins {
     id 'base'
+    id 'fabric-loom' version '1.6-SNAPSHOT' apply false
 }
 
 allprojects {
@@ -11,6 +12,8 @@ subprojects {
     apply plugin: 'java-library'
 
     repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        maven { url = 'https://maven.wispforest.io/releases' }
         mavenCentral()
     }
     java {
@@ -22,6 +25,12 @@ subprojects {
     tasks.withType(JavaCompile).configureEach {
         options.release = 17
         options.encoding = 'UTF-8'
+    }
+    tasks.withType(JavaExec).configureEach {
+        // 游戏演示与正式目标统一使用 Java 17，避免开发机默认版本掩盖兼容问题。
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(17)
+        }
     }
     tasks.withType(Jar).configureEach {
         // 附属只分发自身内容；对应框架和 Protobuf 运行库由宿主提供。

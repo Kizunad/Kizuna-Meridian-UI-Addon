@@ -1,6 +1,60 @@
-description = '经脉操作界面的客户端工程骨架。'
+plugins {
+    id 'fabric-loom'
+}
+
+description = '通用身体模型、分层选择与状态展示。'
+
+def inventoryDirectory = rootProject.file(providers.gradleProperty('inventoryUiFrameworkDir')
+        .getOrElse('../Kizuna-Inventory-UI-Framework'))
+def inventoryJar = new File(inventoryDirectory, 'build/libs/kizuna-inventory-ui-framework-0.1.0-SNAPSHOT.jar')
+if (!inventoryJar.isFile()) {
+    throw new GradleException('请先在 Inventory UI Framework 仓库运行 ./gradlew build，生成可重映射的客户端 JAR。')
+}
 
 dependencies {
-    // 仅引用 protoc 消息；local.meridian 是 composite build 替换键。
-    compileOnlyApi 'local.meridian:client'
+    // 经脉消息与窗口 API 都是必需编译依赖，运行时由宿主提供对应框架。
+    implementation 'local.meridian:client'
+    minecraft 'com.mojang:minecraft:1.20.1'
+    mappings 'net.fabricmc:yarn:1.20.1+build.10:v2'
+    modImplementation 'net.fabricmc:fabric-loader:0.16.10'
+    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.92.3+1.20.1'
+    modImplementation 'io.wispforest:owo-lib:0.11.2+1.20'
+    // Loom 将已构建框架映射到开发命名；不把框架内嵌进 UI 附属。
+    modImplementation files(inventoryJar)
+    testImplementation 'junit:junit:4.13.2'
+}
+
+test { useJUnit() }
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') { expand version: project.version }
+}
+
+if (providers.gradleProperty('humanAddonDir').isPresent()) {
+    sourceSets {
+        demo {
+            compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+            runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+        }
+    }
+    dependencies {
+        demoImplementation 'local.meridian-human:client'
+        demoImplementation 'local.meridian-human:server'
+    }
+    loom {
+        mods {
+            'meridian_ui' { sourceSet sourceSets.main }
+            'meridian_ui_demo' { sourceSet sourceSets.demo }
+        }
+        runs {
+            demo {
+                client()
+                source sourceSets.demo
+                runDir 'build/demo'
+                property 'kiui.smoke', 'true'
+                property 'meridian.ui.smoke', providers.gradleProperty('uiSmoke').getOrElse('false')
+                programArgs '--width', '1440', '--height', '1000'
+            }
+        }
+    }
 }
