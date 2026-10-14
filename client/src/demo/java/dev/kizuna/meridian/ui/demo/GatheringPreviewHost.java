@@ -53,7 +53,8 @@ final class GatheringPreviewHost {
             return Optional.empty();
         }, (caller, command, body) -> true, clock, store,
                 (caller, receipt, before, after) -> { /* 状态与资源均在提交中处理。 */ }, recipes,
-                (caller, body, plan) -> Optional.of("preview:region"));
+                (caller, body, plan) -> Optional.of("preview:region"),
+                new ActionCatalog(HumanContent.bundle().getActionsList()));
         session = new GatheringSession<>("preview-owner", new BodyId(initial.getId()), handler, store,
                 (caller, id) -> caller.equals("preview-owner") && id.value().equals(initial.getId()), clock,
                 body -> store.environmentSource("preview:region"), recipes);
