@@ -8,6 +8,21 @@ import static org.junit.Assert.*;
 /** 整体保护：资源边界与非人体内容映射，防止 UI 偷偷依赖人体命名。 */
 public class BodyPresentationTest {
     @Test
+    public void tissueDetailsShowAuthoritativeActionOccupancyAndRecovery() {
+        // 用非人体组织验证通用窗口不硬编码人体动作，也不在客户端推算资源恢复。
+        BodySnapshot body = BodySnapshot.newBuilder().setStructure(BodyStructure.newBuilder()
+                        .addTissues(TissueDefinition.newBuilder().setId("tendril").setDisplayName("卷须")
+                                .setRecoveryHalfLifeSeconds(12)))
+                .addActions(ActiveAction.newBuilder().setInstanceId("grip")
+                        .setDefinition(ActionDefinition.newBuilder().setDisplayName("缠绕").addTissueIds("tendril")))
+                .build();
+        BodyVisual node = BodyVisual.newBuilder().setTargetKind(BodyTargetKind.TISSUE).setTargetId("tendril").build();
+        assertTrue(BodyInformation.lines(body, node).contains("占用：缠绕"));
+        assertTrue(BodyInformation.lines(body, node).contains("空闲恢复半衰期：12.00 秒"));
+        assertTrue(BodyInformation.lines(body.toBuilder().clearActions().build(), node).contains("占用：空闲"));
+    }
+
+    @Test
     public void arbitraryCreatureUsesTheSameResourceAndStateBinding() {
         // 用非人体模板和器官身份走公开契约，状态展示不依赖 Human JAR。
         BodyScene scene = new BodyScene(presentation().toByteArray());

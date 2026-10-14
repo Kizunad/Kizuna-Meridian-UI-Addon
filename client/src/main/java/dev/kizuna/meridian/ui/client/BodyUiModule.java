@@ -8,10 +8,14 @@ import dev.kizuna.inventoryui.window.UiWindowDefinition;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
 import dev.kizuna.meridian.protocol.pb.GatheringMessages.*;
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathControl;
+import dev.kizuna.meridian.protocol.pb.PresentationMessages.BodyViewUpdate;
 import dev.kizuna.inventoryui.protocol.UiMessageRouter;
 import dev.kizuna.inventoryui.protocol.UiWire;
 import io.wispforest.owo.ui.component.Components;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
@@ -22,6 +26,8 @@ import java.util.function.Consumer;
 
 /** 通用窗口入口；宿主提供 Protobuf 身体及生物包的资源标识。 */
 public final class BodyUiModule implements ClientModule {
+    private static final Identifier HOST_GATHERING_REQUEST = new Identifier("meridian", "gathering_request");
+    private static final Identifier HOST_GATHERING_RESPONSE = new Identifier("meridian", "gathering_response");
     private BodyScene scene;
     private BodySnapshot body;
     private BodyPanel panel;
@@ -38,10 +44,10 @@ public final class BodyUiModule implements ClientModule {
         // 查看与操作分别注册入口，同一模块共享权威快照及聚气消息通道。
         return FrameworkCatalog.Module.of("meridian_ui:body", Set.of("kiui:core"),
                 new FrameworkCatalog.Window(new UiWindowDefinition("meridian_ui:body_window", "meridian_ui:body",
-                        580, 400, Set.of(UiWindowDefinition.Capability.WINDOW))),
+                        280, 180, 580, 400, Set.of(UiWindowDefinition.Capability.WINDOW))),
                 new FrameworkCatalog.Feature("meridian_ui:body", "身体", "修炼", "meridian_ui:body_icon", "meridian_ui:body_window"),
                 new FrameworkCatalog.Window(new UiWindowDefinition("meridian_ui:cultivation_window", "meridian_ui:body",
-                        560, 450, Set.of(UiWindowDefinition.Capability.WINDOW))),
+                        280, 180, 560, 450, Set.of(UiWindowDefinition.Capability.WINDOW))),
                 new FrameworkCatalog.Feature("meridian_ui:cultivation", "吐纳", "修炼",
                         "meridian_ui:cultivation_icon", "meridian_ui:cultivation_window"));
     }
@@ -49,6 +55,38 @@ public final class BodyUiModule implements ClientModule {
     @Override
     public void register(ClientBindings bindings) {
         // 同一生成消息同时支持本地宿主和已协商的网络路由，客户端不依赖权威实现。
+        ClientPlayNetworking.registerGlobalReceiver(new Identifier("meridian", "body_view"),
+                (client, handler, buffer, sender) -> {
+                    // 先限制长度并复制网络缓冲；只读快照在原连接仍有效时交给客户端线程。
+                    if (buffer.readableBytes() == 0 || buffer.readableBytes() > 1024 * 1024) {
+                        return;
+                    }
+                    byte[] payload = new byte[buffer.readableBytes()];
+                    buffer.readBytes(payload);
+                    client.execute(() -> {
+                        if (client.getNetworkHandler() == handler) {
+                            receiveBodyView(payload);
+                        }
+                    });
+                });
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> clearBody());
+        ClientPlayNetworking.registerGlobalReceiver(HOST_GATHERING_RESPONSE, (client, handler, buffer, sender) -> {
+            // Fabric 宿主与公共路由使用同一生成消息，拒绝超大包及旧连接迟到回执。
+            if (buffer.readableBytes() == 0 || buffer.readableBytes() > 1024 * 1024) {
+                return;
+            }
+            byte[] payload = new byte[buffer.readableBytes()];
+            buffer.readBytes(payload);
+            client.execute(() -> {
+                if (client.getNetworkHandler() == handler) {
+                    try {
+                        receiveGathering(GatheringResponse.parseFrom(payload));
+                    } catch (IOException invalid) {
+                        org.slf4j.LoggerFactory.getLogger("meridian_ui").warn(UiErrors.INVALID_UPDATE, invalid);
+                    }
+                }
+            });
+        });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             // 输入租约按客户端 tick 续期，渲染帧率不会改变控制消息的频率。
             if (cultivationPanel != null) {
@@ -93,6 +131,30 @@ public final class BodyUiModule implements ClientModule {
             refreshGathering();
             return cultivationPanel.root();
         });
+    }
+
+    private void receiveBodyView(byte[] payload) {
+        // 该通道只能由当前连接的服务器发送；客户端不把快照当作可写身体或计算依据。
+        try {
+            BodyViewUpdate update = BodyViewUpdate.parseFrom(payload);
+            if (update.getProtocolVersion() != 1 || !update.hasBody() || update.getBody().getId().isBlank()) {
+                throw UiErrors.invalid(UiErrors.INVALID_UPDATE);
+            }
+            Identifier resource = Identifier.tryParse(update.getPresentationResource());
+            if (resource == null) {
+                throw UiErrors.invalid(UiErrors.INVALID_UPDATE);
+            }
+            if (body == null) {
+                present(update.getBody(), resource);
+                bindFabricGathering();
+            } else if (body.getId().equals(update.getBody().getId())
+                    && update.getBody().getRevision() >= body.getRevision()) {
+                update(update.getBody());
+            }
+        } catch (IOException | IllegalArgumentException failure) {
+            // 异常包保留旧展示并记录原因，避免损坏模型资源让客户端退出游戏。
+            org.slf4j.LoggerFactory.getLogger("meridian_ui").warn(UiErrors.INVALID_UPDATE, failure);
+        }
     }
 
     public void present(BodySnapshot snapshot, Identifier resource) {
@@ -214,6 +276,9 @@ public final class BodyUiModule implements ClientModule {
     @Override
     public void protocolReady(ClientRuntime runtime) {
         // 网络输送交给 Inventory UI；业务结果由独立 Protobuf 响应更新。
+        if (bindFabricGathering()) {
+            return;
+        }
         bindGathering(request -> runtime.protocol().request("meridian_ui:gathering_request", request,
                 System.currentTimeMillis()).thenAccept(outcome -> MinecraftClient.getInstance().execute(() -> {
                     // 连接拒绝或超时允许重新查询；不自动用新 ID 重复启动。
@@ -225,9 +290,28 @@ public final class BodyUiModule implements ClientModule {
                 })));
     }
 
+    private boolean bindFabricGathering() {
+        // 已安装的游戏宿主直接提供同一吐纳契约；无该能力的服务器继续使用公共路由。
+        if (!ClientPlayNetworking.canSend(HOST_GATHERING_REQUEST)) {
+            return false;
+        }
+        bindGathering(request -> {
+            // 操作参数来自 UI，身份、时间、摄入量和配方能力仍由逻辑服务器决定。
+            var buffer = PacketByteBufs.create();
+            buffer.writeBytes(request.toByteArray());
+            ClientPlayNetworking.send(HOST_GATHERING_REQUEST, buffer);
+        });
+        return true;
+    }
+
     @Override
     public void disconnected(ClientRuntime runtime) {
         // 断线清除身体引用，不能把旧服务器的数据带到下一次连接。
+        clearBody();
+    }
+
+    private void clearBody() {
+        // 未建立 Inventory UI 握手的连接也必须在 Fabric 断线时清除只读投影。
         body = null;
         scene = null;
         panel = null;

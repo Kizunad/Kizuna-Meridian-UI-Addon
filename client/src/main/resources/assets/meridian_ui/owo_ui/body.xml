@@ -4,40 +4,32 @@
         <body-panel>
             <flow-layout direction="vertical">
                 <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
-                <padding><all>6</all></padding>
-                <gap>5</gap>
                 <children>
                     <label id="body-title"><text>身体 · 只读预览</text><color>#FFE8D9AD</color></label>
-                    <flow-layout direction="horizontal">
-                        <sizing><horizontal method="fill">100</horizontal><vertical method="fill">88</vertical></sizing>
-                        <gap>6</gap>
-                        <children>
-                            <flow-layout id="layers" direction="vertical">
-                                <sizing><horizontal method="fixed">83</horizontal><vertical method="fill">100</vertical></sizing>
-                                <gap>5</gap>
-                                <children>
-                                    <label><text>渲染层</text><color>#FF92AFB0</color></label>
-                                </children>
-                            </flow-layout>
-                            <flow-layout id="canvas" direction="vertical">
-                                <sizing><horizontal method="fill">62</horizontal><vertical method="fill">100</vertical></sizing>
-                            </flow-layout>
-                            <scroll direction="vertical">
-                                    <flow-layout direction="vertical">
-                                        <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
-                                        <gap>4</gap>
-                                        <children>
-                                            <label id="information">
-                                                <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
-                                                <text>点击模型查看介绍与数值</text><color>#FFD3DFDB</color>
-                                            </label>
-                                        </children>
-                                    </flow-layout>
-                                <sizing><horizontal method="fill">38</horizontal><vertical method="fill">100</vertical></sizing>
-                            </scroll>
-                        </children>
+                    <scroll id="layers-scroll" direction="vertical">
+                        <flow-layout id="layers" direction="ltr-text-flow">
+                            <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
+                            <gap>4</gap>
+                        </flow-layout>
+                        <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+                    </scroll>
+                    <flow-layout id="canvas" direction="vertical">
+                        <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
                     </flow-layout>
-                    <label><text>左键选中 · 拖动旋转 · 滚轮缩放 · 中键回到全身</text><color>#FF92AFB0</color></label>
+                    <scroll id="information-scroll" direction="vertical">
+                        <flow-layout direction="vertical">
+                            <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
+                            <padding><right>5</right></padding>
+                            <children>
+                                <label id="information">
+                                    <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
+                                    <text>点击模型查看介绍与数值</text><color>#FFD3DFDB</color>
+                                </label>
+                            </children>
+                        </flow-layout>
+                        <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+                    </scroll>
+                    <label id="body-hint"><text>左键选中 · 拖动旋转 · 滚轮缩放 · 中键回到全身</text><color>#FF92AFB0</color></label>
                 </children>
             </flow-layout>
         </body-panel>

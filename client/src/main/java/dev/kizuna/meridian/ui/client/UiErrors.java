@@ -4,6 +4,7 @@ package dev.kizuna.meridian.ui.client;
 public final class UiErrors {
     public static final String TUTORIAL_SAVE = "无法保存吐纳指引已读偏好";
     public static final String GATHERING_UNAVAILABLE = "聚气连接不可用，请重新连接或刷新。";
+    public static final String BREATHING_UNAVAILABLE = "服务器尚未提供吐纳能力，请检查生物附属的宿主接入。";
 
     public static String gatheringFailure(dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode code) {
         // 失败原因同时指向调整入口，不通过服务端异常文案猜测业务状态。

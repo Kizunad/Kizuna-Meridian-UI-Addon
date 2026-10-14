@@ -23,6 +23,7 @@ final class BreathingMeters {
     private static final Identifier AIR = new Identifier("meridian_ui", "textures/gui/lungs_air.png");
     private static final int AIR_TOP = 20;
     private static final int AIR_BOTTOM = 54;
+    private static final int COMPACT_WIDTH = 420;
     private final AirGauge air = new AirGauge();
     private final ReserveGauge reserve = new ReserveGauge();
     private final QiSummary qi = new QiSummary();
@@ -49,11 +50,22 @@ final class BreathingMeters {
         }
     }
 
+    void arrange(int width, int height) {
+        // 紧凑场景把纳入量抬到右下按钮上方，避免肺图、按钮和数字争用同一条底边。
+        boolean compact = width < COMPACT_WIDTH;
+        air.sizing(Sizing.fixed(compact ? 72 : 80), Sizing.fixed(84));
+        air.margins(Insets.of(0, 12, compact ? 6 : 12, 0));
+        qi.sizing(Sizing.fixed(compact ? 128 : 136), Sizing.fixed(26));
+        qi.margins(Insets.of(0, compact ? 88 : 12, 0, compact ? 6 : 12));
+        action.sizing(Sizing.fixed(compact ? 104 : 120), Sizing.fixed(compact ? 26 : 30));
+        reserve.horizontalSizing(Sizing.fill(compact ? 78 : 64));
+    }
+
     void update(GatheringView view, String error) {
         // 快照到达时刷新提示与总账，逐帧仅绘制空气插值，不重复汇总身体明细。
         if (view == null || !view.hasBreathing()) {
             breath = BreathingView.getDefaultInstance();
-            action.tooltip(Text.literal("等待宿主提供吐纳能力"));
+            action.tooltip(Text.literal(error.isEmpty() ? UiErrors.BREATHING_UNAVAILABLE : error));
             air.tooltip(List.<Text>of());
             reserve.tooltip(List.<Text>of());
             qi.tooltip(List.<Text>of());

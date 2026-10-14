@@ -1,6 +1,7 @@
 package dev.kizuna.meridian.ui.client;
 
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.*;
+import dev.kizuna.inventoryui.client.component.ResponsiveLayout;
 import dev.kizuna.meridian.protocol.pb.GatheringMessages.GatheringView;
 import io.wispforest.owo.ui.container.FlowLayout;
 import io.wispforest.owo.ui.parsing.UIModelLoader;
@@ -22,13 +23,14 @@ public final class CultivationPanel {
     public CultivationPanel(BodyScene scene, Consumer<BreathControl> sender) {
         // XML 提供整幅场景；各控件随后叠加在同一场景内部。
         this.sender = sender;
-        root = UIModelLoader.get(new Identifier("meridian_ui", "cultivation"))
+        FlowLayout content = UIModelLoader.get(new Identifier("meridian_ui", "cultivation"))
                 .expandTemplate(FlowLayout.class, "cultivation-panel", Map.of());
         canvas = new BreathingCanvas(scene, sender);
-        root.child(canvas);
+        content.child(canvas);
         ActionRow action = new ActionRow(this::actionLabel, this::canAct, this::act);
         action.id("breathing-start");
-        meters = new BreathingMeters(root, action);
+        meters = new BreathingMeters(content, action);
+        root = new ResponsiveLayout(content, meters::arrange);
     }
 
     public FlowLayout root() {

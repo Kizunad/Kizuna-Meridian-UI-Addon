@@ -5,6 +5,7 @@ import io.wispforest.owo.ui.core.CursorStyle;
 import io.wispforest.owo.ui.core.OwoUIDrawContext;
 import io.wispforest.owo.ui.core.Sizing;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.text.Text;
 import java.util.function.BooleanSupplier;
 import org.lwjgl.glfw.GLFW;
 
@@ -21,6 +22,7 @@ final class LayerToggle extends BaseComponent {
         this.toggle = toggle;
         sizing(Sizing.fill(100), Sizing.fixed(27));
         cursorStyle(CursorStyle.HAND);
+        tooltip(Text.literal(label));
     }
 
     @Override
@@ -33,7 +35,8 @@ final class LayerToggle extends BaseComponent {
         if (enabled) {
             context.fill(x + 10, y + 11, x + 14, y + 15, color);
         }
-        context.drawText(MinecraftClient.getInstance().textRenderer, label, x + 24, y + 9, color, false);
+        var font = MinecraftClient.getInstance().textRenderer;
+        context.drawText(font, font.trimToWidth(label, Math.max(0, width - 26)), x + 24, y + 9, color, false);
     }
 
     @Override

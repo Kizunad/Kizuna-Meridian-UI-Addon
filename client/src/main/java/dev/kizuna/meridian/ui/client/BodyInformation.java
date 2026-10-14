@@ -43,6 +43,12 @@ public final class BodyInformation {
                 lines.add("基础力量：" + number(definition.getCapacity().getStrengthNewtons()) + " N");
                 lines.add("基础爆发：" + number(definition.getCapacity().getBurstWatts()) + " W");
                 lines.add("基础耐力：" + number(definition.getCapacity().getEnduranceJoules()) + " J");
+                // 动作定义随权威实例保存，客户端直接展示占用，不猜测行走或吐纳状态。
+                List<String> occupyingActions = body.getActionsList().stream()
+                        .filter(action -> action.getDefinition().getTissueIdsList().contains(id))
+                        .map(action -> action.getDefinition().getDisplayName()).toList();
+                lines.add("占用：" + (occupyingActions.isEmpty() ? "空闲" : String.join("、", occupyingActions)));
+                lines.add("空闲恢复半衰期：" + number(definition.getRecoveryHalfLifeSeconds()) + " 秒");
                 TissueState state = body.getTissueStatesList().stream()
                         .filter(value -> value.getId().equals(id)).findFirst().orElse(null);
                 if (state == null) {

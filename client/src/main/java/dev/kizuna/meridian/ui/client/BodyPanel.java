@@ -1,10 +1,14 @@
 package dev.kizuna.meridian.ui.client;
 
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
+import dev.kizuna.inventoryui.client.component.ResponsiveLayout;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
 import io.wispforest.owo.ui.component.LabelComponent;
 import io.wispforest.owo.ui.container.FlowLayout;
 import io.wispforest.owo.ui.parsing.UIModelLoader;
+import io.wispforest.owo.ui.core.Component;
+import io.wispforest.owo.ui.core.Positioning;
+import io.wispforest.owo.ui.core.Sizing;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import java.util.List;
@@ -12,11 +16,21 @@ import java.util.Map;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-/** XML 持有静态布局，Java 只绑定生物资源和选择状态。 */
+/** XML 持有组件树，Java 按内容尺寸排布并绑定生物资源与选择状态。 */
 public final class BodyPanel {
+    private static final int PADDING = 6;
+    private static final int GAP = 6;
+    private static final int TITLE_HEIGHT = 12;
+    private static final int HINT_HEIGHT = 22;
+    private static final int SIDEBAR_WIDTH = 83;
+    private static final int COMPACT_BREAKPOINT = 520;
+    private static final int TOGGLE_WIDTH = 54;
+    private static final int TOGGLE_HEIGHT = 27;
+    private static final int TOGGLE_GAP = 4;
     private final BodyScene scene;
     private BodySnapshot body;
     private final FlowLayout root;
+    private final FlowLayout content;
     private final LabelComponent information;
     private final BodyCanvas canvas;
     private final Set<String> visibleLayers = new LinkedHashSet<>();
@@ -28,19 +42,65 @@ public final class BodyPanel {
         scene.requireTemplate(body);
         this.scene = scene;
         this.body = body;
-        root = UIModelLoader.get(new Identifier("meridian_ui", "body"))
+        content = UIModelLoader.get(new Identifier("meridian_ui", "body"))
                 .expandTemplate(FlowLayout.class, "body-panel", Map.of());
-        information = root.childById(LabelComponent.class, "information");
+        information = content.childById(LabelComponent.class, "information");
         canvas = new BodyCanvas(scene, this::select, this::overview);
-        root.childById(FlowLayout.class, "canvas").child(canvas);
-        FlowLayout layers = root.childById(FlowLayout.class, "layers");
+        content.childById(FlowLayout.class, "canvas").child(canvas);
+        FlowLayout layers = content.childById(FlowLayout.class, "layers");
         for (PresentationLayer layer : scene.presentation().getLayersList()) {
             var checkbox = new LayerToggle(layer.getDisplayName(), () -> visibleLayers.contains(layer.getId()),
                     () -> setLayerVisible(layer.getId(), !visibleLayers.contains(layer.getId())));
             checkbox.id("layer-toggle-" + layer.getId());
             layers.child(checkbox);
         }
+        root = new ResponsiveLayout(content, this::arrange);
         layer(scene.presentation().getLayers(0).getId());
+    }
+
+    private void arrange(int width, int height) {
+        // 先给标题与说明留位，再从实际余下宽度分配区域，避免百分比列加上侧栏后溢出。
+        int innerWidth = Math.max(1, width - PADDING * 2);
+        int top = PADDING + TITLE_HEIGHT;
+        int bottom = Math.max(top + 1, height - PADDING - HINT_HEIGHT - GAP);
+        place(content.childById(Component.class, "body-title"), PADDING, PADDING, innerWidth, TITLE_HEIGHT);
+        place(content.childById(Component.class, "body-hint"), PADDING,
+                Math.max(PADDING, height - PADDING - HINT_HEIGHT), innerWidth, HINT_HEIGHT);
+
+        FlowLayout layers = content.childById(FlowLayout.class, "layers");
+        int modelLeft = PADDING;
+        int remainingWidth = innerWidth;
+        int toggleWidth = SIDEBAR_WIDTH;
+        if (width < COMPACT_BREAKPOINT) {
+            // 窄窗口把勾选项搬到顶部并自动换行；附属提供很多层时使用现有滚动容器。
+            toggleWidth = TOGGLE_WIDTH;
+            int columns = Math.max(1, (innerWidth + TOGGLE_GAP) / (toggleWidth + TOGGLE_GAP));
+            int rows = (layers.children().size() + columns - 1) / columns;
+            int controlsHeight = Math.min(rows * (TOGGLE_HEIGHT + TOGGLE_GAP), Math.max(TOGGLE_HEIGHT, (bottom - top) / 3));
+            place(content.childById(Component.class, "layers-scroll"), PADDING, top, innerWidth, controlsHeight);
+            top += controlsHeight + GAP;
+        } else {
+            // 宽窗口沿用左侧勾选栏；模型和详情只平分扣除侧栏后的空间。
+            place(content.childById(Component.class, "layers-scroll"), PADDING, top, SIDEBAR_WIDTH, bottom - top);
+            modelLeft += SIDEBAR_WIDTH + GAP;
+            remainingWidth -= SIDEBAR_WIDTH + GAP;
+        }
+        for (Component toggle : layers.children()) {
+            toggle.sizing(Sizing.fixed(toggleWidth), Sizing.fixed(TOGGLE_HEIGHT));
+        }
+
+        int detailWidth = Math.max(1, (remainingWidth - GAP) * 45 / 100);
+        int modelWidth = Math.max(1, remainingWidth - GAP - detailWidth);
+        int areaHeight = Math.max(1, bottom - top);
+        place(content.childById(Component.class, "canvas"), modelLeft, top, modelWidth, areaHeight);
+        place(content.childById(Component.class, "information-scroll"), modelLeft + modelWidth + GAP,
+                top, detailWidth, areaHeight);
+    }
+
+    private static void place(Component component, int x, int y, int width, int height) {
+        // 位置和大小共同交给 owo，使绘制、裁剪和鼠标命中始终使用同一套逻辑坐标。
+        component.positioning(Positioning.absolute(x, y));
+        component.sizing(Sizing.fixed(Math.max(1, width)), Sizing.fixed(Math.max(1, height)));
     }
 
     public FlowLayout root() {
@@ -106,7 +166,7 @@ public final class BodyPanel {
     private void showInformation() {
         // 普通状态更新只替换文字，让玩家已调整的镜头与选择保持稳定。
         if (selected == null) {
-            information.text(Text.literal("身体信息\n\n点击模型查看部位介绍、血量与能力。\n\n左侧可同时勾选多个层。\n外层会自然遮挡内部，取消勾选即可逐层查看。\n\n可见对象：" + visible.size()));
+            information.text(Text.literal("身体信息\n\n点击模型查看部位介绍、血量与能力。\n\n可同时勾选多个渲染层。\n外层会自然遮挡内部，取消勾选即可逐层查看。\n\n可见对象：" + visible.size()));
             return;
         }
         information.text(Text.literal(String.join("\n", BodyInformation.lines(body, selected))));

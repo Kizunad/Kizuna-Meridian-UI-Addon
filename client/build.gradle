@@ -61,6 +61,7 @@ if (providers.gradleProperty('humanAddonDir').isPresent()) {
                 property 'kiui.smoke', 'true'
                 property 'meridian.ui.smoke', providers.gradleProperty('uiSmoke').getOrElse('false')
                 property 'meridian.ui.gatheringSmoke', providers.gradleProperty('gatheringSmoke').getOrElse('false')
+                property 'meridian.ui.responsiveSmoke', providers.gradleProperty('responsiveSmoke').getOrElse('false')
                 programArgs '--width', '1440', '--height', '1000'
             }
         }

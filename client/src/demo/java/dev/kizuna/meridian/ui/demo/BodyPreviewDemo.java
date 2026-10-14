@@ -33,6 +33,7 @@ import java.util.Map;
 import java.util.Set;
 import io.wispforest.owo.ui.core.Component;
 import io.wispforest.owo.ui.component.LabelComponent;
+import org.lwjgl.glfw.GLFW;
 
 /** 独立演示和整体交互验收；人体依赖及初始化不会进入生产 UI JAR。 */
 public final class BodyPreviewDemo implements ClientModInitializer {
@@ -44,6 +45,13 @@ public final class BodyPreviewDemo implements ClientModInitializer {
     private byte[] original;
     private final boolean smoke = Boolean.getBoolean("meridian.ui.smoke");
     private final boolean gatheringSmoke = Boolean.getBoolean("meridian.ui.gatheringSmoke");
+    private final boolean responsiveSmoke = Boolean.getBoolean("meridian.ui.responsiveSmoke");
+    private static final int[][] RESPONSIVE_SIZES = {
+            {1440, 1000, 2}, {1440, 1000, 4}, {960, 720, 3}, {1920, 1080, 0}, {1920, 1080, 2}
+    };
+    private Component originalBodyRoot;
+    private Component originalBreathingRoot;
+    private int informationTopBeforeScroll;
     private GatheringPreviewHost gatheringHost;
     private int gatheringTicks;
     private double acquiredBeforeRenewal;
@@ -65,7 +73,7 @@ public final class BodyPreviewDemo implements ClientModInitializer {
     private void tick(MinecraftClient client) throws Exception {
         // 超时不会写成功标记，保留崩溃现场以定位资源或窗口失败。
         totalTicks++;
-        if ((smoke || gatheringSmoke) && totalTicks > 1000) {
+        if ((smoke || gatheringSmoke || responsiveSmoke) && totalTicks > 1000) {
             throw new IllegalStateException("模型验收超时");
         }
         if (client.currentScreen instanceof AccessibilityOnboardingScreen) {
@@ -111,7 +119,9 @@ public final class BodyPreviewDemo implements ClientModInitializer {
                 } else {
                     module.panel().layer(preview);
                 }
-                runtime.open("meridian_ui:cultivation", null);
+                if (!responsiveSmoke) {
+                    runtime.open("meridian_ui:cultivation", null);
+                }
             }
             System.out.println("MERIDIAN_PREVIEW_READY: manual breathing, meditation animation and read-only body preview; interactive=" + !smoke);
         }
@@ -121,6 +131,10 @@ public final class BodyPreviewDemo implements ClientModInitializer {
                 verifyGathering(client);
                 return;
             }
+        }
+        if (opened && responsiveSmoke) {
+            verifyResponsive(client);
+            return;
         }
         if (!opened || !smoke) {
             return;
@@ -258,6 +272,131 @@ public final class BodyPreviewDemo implements ClientModInitializer {
             Files.writeString(client.runDirectory.toPath().resolve("body-smoke-ok.txt"),
                     "Blockbench textures; vanilla player shape; multi-layer checkboxes; assembled eye click; all 15 organs and 36 meridians selectable; stable refresh; hidden selection cleared; empty layers; unchanged body; window cleanup\n");
             client.scheduleStop();
+        }
+    }
+
+    private void verifyResponsive(MinecraftClient client) throws Exception {
+        // 同一身体组件经历实际窗口尺寸与 GUI 缩放变化，验证布局、选择和 Screen 输入一起迁移。
+        int scenario = ticks / 90;
+        int step = ++ticks % 90;
+        if (scenario == RESPONSIVE_SIZES.length) {
+            Files.writeString(client.runDirectory.toPath().resolve("responsive-smoke-ok.txt"),
+                    "五组实际分辨率/GUI 缩放；身体布局不相交；保留组件与选择；模型真实点击；吐纳叠加控件及按钮输入。\n");
+            client.scheduleStop();
+            return;
+        }
+        if (step == 1) {
+            int[] size = RESPONSIVE_SIZES[scenario];
+            GLFW.glfwSetWindowSize(client.getWindow().getHandle(), size[0], size[1]);
+            client.options.getGuiScale().setValue(size[2]);
+            client.onResolutionChanged();
+        }
+        if (step == 15) {
+            BodyPanel panel = module.panel();
+            if (scenario == 0) {
+                originalBodyRoot = panel.root();
+                panel.layer("organs");
+            } else if (panel.root() != originalBodyRoot || !panel.selectedId().equals("heart")
+                    || !panel.visibleLayers().equals(Set.of("organs"))) {
+                throw new IllegalStateException("改变分辨率丢失了身体组件、选择或图层状态");
+            }
+            var root = panel.root();
+            Component layers = root.childById(Component.class, "layers-scroll");
+            Component details = root.childById(Component.class, "information-scroll");
+            for (Component area : List.of(layers, details, panel.canvas(),
+                    root.childById(Component.class, "body-title"), root.childById(Component.class, "body-hint"))) {
+                requireInside(root, area);
+            }
+            requireSeparate(layers, panel.canvas());
+            requireSeparate(layers, details);
+            requireSeparate(panel.canvas(), details);
+            panel.overview();
+            panel.canvas().camera().settle();
+            verifyClick(client, "heart");
+            root.childById(io.wispforest.owo.ui.container.ScrollContainer.class, "information-scroll").scrollTo(0);
+            System.out.println("MERIDIAN_RESPONSIVE_BODY: " + scenario + " "
+                    + client.getWindow().getScaledWidth() + "x" + client.getWindow().getScaledHeight()
+                    + " content=" + root.width() + "x" + root.height());
+        }
+        if (step == 20) {
+            // 新窗口尺寸可能使详情变长；通过真实滚轮确认被裁掉的文字仍能读到。
+            var root = module.panel().root();
+            Component details = root.childById(Component.class, "information-scroll");
+            Component information = root.childById(Component.class, "information");
+            informationTopBeforeScroll = information.y();
+            client.currentScreen.mouseScrolled(details.x() + details.width() / 2.0,
+                    details.y() + details.height() / 2.0, -30);
+        }
+        if (step == 27) {
+            var root = module.panel().root();
+            Component details = root.childById(Component.class, "information-scroll");
+            Component information = root.childById(Component.class, "information");
+            if (information.height() > details.height() && information.y() >= informationTopBeforeScroll) {
+                throw new IllegalStateException("窄窗口详情无法通过实际滚轮查看");
+            }
+        }
+        if (step == 30) {
+            capture(client, "responsive-body-" + scenario + ".png");
+            InventoryUiClient.runtime().open("meridian_ui:cultivation", null);
+        }
+        if (step == 45) {
+            var panel = module.cultivationPanel();
+            var root = panel.root();
+            if (scenario == 0) {
+                originalBreathingRoot = root;
+            } else if (root != originalBreathingRoot || !gatheringHost.view().getBreathing().getActive()) {
+                throw new IllegalStateException("改变分辨率重建或中断了吐纳窗口");
+            }
+            var controls = List.of(root.childById(Component.class, "breathing-air"),
+                    root.childById(Component.class, "breathing-reserve"),
+                    root.childById(Component.class, "breathing-start"),
+                    root.childById(Component.class, "breathing-qi"));
+            for (int index = 0; index < controls.size(); index++) {
+                Component control = controls.get(index);
+                requireInside(panel.canvas(), control);
+                if (root.childAt(control.x() + control.width() / 2, control.y() + control.height() / 2) != control) {
+                    throw new IllegalStateException("吐纳控件的命中与绘制不一致：" + control.id());
+                }
+                for (int other = index + 1; other < controls.size(); other++) {
+                    requireSeparate(control, controls.get(other));
+                }
+            }
+            capture(client, "responsive-breathing-" + scenario + ".png");
+            if (scenario == 0) {
+                clickCultivation(client, "breathing-start");
+            }
+        }
+        if (step == 55) {
+            capture(client, "responsive-tutorial-" + scenario + ".png");
+            if (!gatheringHost.view().getBreathing().getActive()) {
+                clickCultivation(client, "breathing-start");
+            }
+        }
+        if (step == 65) {
+            if (!gatheringHost.view().getBreathing().getActive()) {
+                throw new IllegalStateException("调整大小后不能通过实际按钮开始吐纳");
+            }
+            var windows = InventoryUiClient.runtime().workspace().windows();
+            if (!windows.minimize(windows.key("meridian_ui:cultivation_window", "singleton"))) {
+                throw new IllegalStateException("无法让身体窗口重新接收鼠标输入");
+            }
+        }
+    }
+
+    private static void requireInside(Component parent, Component child) {
+        // 以挂载后的真实组件边界验收，覆盖 XML 百分比、窗口装饰与 GUI 缩放的组合结果。
+        if (child.width() <= 0 || child.height() <= 0 || child.x() < parent.x() || child.y() < parent.y()
+                || child.x() + child.width() > parent.x() + parent.width()
+                || child.y() + child.height() > parent.y() + parent.height()) {
+            throw new IllegalStateException("组件超出内容区：" + child.id());
+        }
+    }
+
+    private static void requireSeparate(Component first, Component second) {
+        // 各内容区可以共边，但不能相互覆盖文字或阻挡鼠标操作。
+        if (first.x() < second.x() + second.width() && first.x() + first.width() > second.x()
+                && first.y() < second.y() + second.height() && first.y() + first.height() > second.y()) {
+            throw new IllegalStateException("组件相互覆盖：" + first.id() + " / " + second.id());
         }
     }
 
@@ -511,8 +650,10 @@ public final class BodyPreviewDemo implements ClientModInitializer {
         // 优先从聚焦中心寻找可见面，避免为细长经脉逐次扫描大量空白区域。
         BodyCanvas canvas = module.panel().canvas();
         List<int[]> probes = new ArrayList<>();
-        for (int y = 10; y < canvas.height() - 10; y += 3) {
-            for (int x = 10; x < canvas.width() - 10; x += 3) {
+        // 紧凑预览里的小器官可能只有数个逻辑像素，采样不能直接跨过可点击的三角面。
+        int probeStep = canvas.height() < 140 ? 1 : 3;
+        for (int y = 10; y < canvas.height() - 10; y += probeStep) {
+            for (int x = 10; x < canvas.width() - 10; x += probeStep) {
                 probes.add(new int[]{x, y});
             }
         }

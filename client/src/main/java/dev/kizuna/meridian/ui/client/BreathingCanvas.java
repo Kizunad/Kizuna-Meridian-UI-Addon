@@ -14,6 +14,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.SimpleFramebuffer;
 import net.minecraft.client.render.*;
+import net.minecraft.text.Text;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -364,17 +365,21 @@ public final class BreathingCanvas extends BaseComponent {
     }
 
     private void drawTutorial(OwoUIDrawContext context) {
-        // 教学覆盖整份场景，解释整个空间的气流、方向差异和惯性。
+        // 教学随场景宽度换行，紧凑窗口精简措辞，底部仍留出开始按钮的位置。
         context.fill(x, y, x + width, y + height, 0xB0000000);
-        int left = x + Math.max(12, (width - 310) / 2);
-        int top = y + height / 2 - 47;
-        context.fill(left - 12, top - 14, left + 298, top + 103, 0xF0101D21);
-        context.fill(left - 12, top - 14, left - 10, top + 103, 0xFFA3D7C9);
         var font = MinecraftClient.getInstance().textRenderer;
+        int textWidth = Math.max(1, Math.min(286, width - 40));
+        String instructions = "左键吸气，右键呼气，松开停气。\n气流带动全场灵气，近处更强且有惯性。\n中键旋转，滚轮缩放。\n肺满需呼气，留意耐力与精力。";
+        var lines = font.wrapLines(Text.literal(instructions), textWidth);
+        int lineHeight = font.fontHeight + 2;
+        int textHeight = font.fontHeight + 6 + lines.size() * lineHeight;
+        int left = x + (width - textWidth) / 2;
+        int top = y + Math.max(8, (height - 54 - textHeight) / 2);
+        context.fill(left - 8, top - 6, left + textWidth + 8, top + textHeight + 6, 0xF0101D21);
+        context.fill(left - 8, top - 6, left - 6, top + textHeight + 6, 0xFFA3D7C9);
         context.drawText(font, "第一次吐纳 · 手动引导气息", left, top, 0xFFE5DEC9, false);
-        String[] lines = {"左键吸气，右键呼气，松开停气。", "引导空间气流，所有灵气都会响应。", "近处与朝向处更强，需预判惯性与距离。", "中键拖动旋转，滚轮缩放观察前后位置。", "肺满就呼，排空再吸；留意耐力与精力。"};
-        for (int index = 0; index < lines.length; index++) {
-            context.drawText(font, lines[index], left, top + 23 + index * 14, 0xFFACBFBC, false);
+        for (int index = 0; index < lines.size(); index++) {
+            context.drawText(font, lines.get(index), left, top + font.fontHeight + 6 + index * lineHeight, 0xFFACBFBC, false);
         }
     }
 
