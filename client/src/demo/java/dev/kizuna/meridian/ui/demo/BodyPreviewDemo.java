@@ -93,8 +93,8 @@ public final class BodyPreviewDemo implements ClientModInitializer {
             original = HumanBirth.candidate(template, "preview-body", time);
             snapshot = BodySnapshot.parseFrom(original);
             if (smoke) {
-                // 全模型回归需要通灵才能检视全部经脉；交互演示仍使用实际醒灵初值。
-                snapshot = snapshot.toBuilder().setRealm(Realm.SPIRITUAL_ATTUNEMENT).build();
+                // 全模型回归需要天纹才能检视全部经脉；交互演示仍使用实际游炁初值。
+                snapshot = snapshot.toBuilder().setRealm(Realm.HEAVENLY_PATTERN).build();
                 original = snapshot.toByteArray();
             }
             // Human 的资源属于它自己的 JAR；演示为纯 Java 内容包挂载客户端资源目录。

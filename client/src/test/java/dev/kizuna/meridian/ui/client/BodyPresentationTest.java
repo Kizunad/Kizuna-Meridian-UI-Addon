@@ -105,9 +105,9 @@ public class BodyPresentationTest {
 
         // 生物内容声明自己的展示层级；缺省保持可见，未解锁节点不能进入选择列表。
         assertTrue(BodyScene.realmAllows(body, node));
-        BodyVisual gated = node.toBuilder().setMinimumRealm(Realm.MERIDIAN_CONDENSATION).build();
-        assertFalse(BodyScene.realmAllows(body.toBuilder().setRealm(Realm.AWAKENING).build(), gated));
-        assertTrue(BodyScene.realmAllows(body.toBuilder().setRealm(Realm.MERIDIAN_CONDENSATION).build(), gated));
+        BodyVisual gated = node.toBuilder().setMinimumRealm(Realm.ESSENCE_TRANSFORMATION).build();
+        assertFalse(BodyScene.realmAllows(body.toBuilder().setRealm(Realm.WANDERING_QI).build(), gated));
+        assertTrue(BodyScene.realmAllows(body.toBuilder().setRealm(Realm.ESSENCE_TRANSFORMATION).build(), gated));
         assertTrue(BodyScene.realmAllows(body.toBuilder().setRealm(Realm.VOID_TRANSFORMATION).build(), gated));
 
         // 身体移除器官后停止关联，旧模型不能捏造状态；模板变更必须明确拒绝。
