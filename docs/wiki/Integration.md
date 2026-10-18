@@ -1,5 +1,7 @@
 # 构建与依赖
 
+经脉操作卡扩展需要 Framework 当前源码的 `operation_ui.proto`，吐纳到货累计需要 `BreathingView.stored_qi`。这些是工作区契约变更，运行时须同步更新 Framework、Human Fabric 和 UI，不能只替换 UI JAR。多 Addon 的注册、更新、请求和卸载见[经脉操作卡](Meridian-Opening.md)。
+
 ## 本地构建
 
 需要 Java 17、独立经脉框架和 Inventory UI Framework 两个仓库。默认目录关系：
@@ -47,6 +49,8 @@ Windows 对应使用 `gradlew.bat`。Gradle Wrapper 包含分发校验和，源�
 
 Human Addon 仍由宿主作为具体生物内容安装，不是 UI 的强制前置。
 
+经脉操作还要求 Framework 的 `opening.proto`、`BodyViewUpdate.opening/operations` 和 `OpeningSession`，以及 Inventory UI 的六参数 `Feature` 菜单可见性字段；先重建对应框架再构建本包。人体条件与操作卡由 Human 提供。单击/双击经脉仅选中高亮，F/G 直接操作；通用操作卡保留隐藏入口供宿主显式打开，不重复占用功能菜单。具体消息与宿主调度职责见[经脉操作接入](Meridian-Opening.md)。
+
 窗口自适应还需要 Inventory UI 当前源码中的七参数 `UiWindowDefinition` 和 `ResponsiveLayout`。先重建框架 JAR 再构建本附属，运行时同步更新两个客户端产物；只更换 UI Addon 而保留旧窗口框架不满足此 API 依赖。这是本地构建要求，尚无对应的已发布版本号。
 
 客户端已配置 Fabric Loom、Minecraft 1.20.1、Yarn 1.20.1+build.10、Fabric Loader 0.16.10、Fabric API 0.92.3+1.20.1 与 owo-lib 0.11.2+1.20。静态布局使用 XML，公共相机与窗口 API 来自 Inventory UI。服务端提供纯 Java 聚气路由桥接，未内置 Minecraft 玩家或世界服务。
@@ -62,7 +66,7 @@ Human Addon 仍由宿主作为具体生物内容安装，不是 UI 的强制前�
 
 ## 游戏内演示
 
-真实玩家可由 Human 的可选 `fabric/` 宿主推送 `presentation.proto` 的 `BodyViewUpdate`。客户端在 `meridian:body_view` 接收有界 Protobuf，断线清理、拒绝跨连接迟到消息与倒退版本；此入口仅作展示。Human 适配目前提供行走/疾跑身体与疲劳数值，`I` → 身体 → 肌肉可查看实际占用和恢复半衰期；精确当前可用力量/耐力使用宿主 `/meridian tissue <id>` 查询。UI 本身没有新增 Human 编译依赖。
+真实玩家可由 Human 的可选 `fabric/` 宿主推送 `presentation.proto` 的 `BodyViewUpdate`。客户端在 `meridian:body_view` 接收有界 Protobuf，断线清理、拒绝跨连接迟到消息与倒退版本；此入口仅作展示。Human 适配目前提供行走/疾跑身体与疲劳数值，`I` → 检视 → 勾选肌肉可查看实际占用和恢复半衰期；默认只显示使用玩家基础皮肤的体表。精确当前可用力量/耐力使用宿主 `/meridian tissue <id>` 查询。UI 本身没有新增 Human 编译依赖。
 
 这一路径依赖当前含 `BodyViewUpdate` 的框架源码。Human Fabric 宿主同时提供真实吐纳通道，UI 自动绑定并沿用原三维界面，详见[吐纳接入](Gathering.md)。盘坐预览须装入含 `meditate` 资源的 Player Animations；下述标题界面演示使用独立账本。
 
@@ -76,7 +80,7 @@ xvfb-run -a ./gradlew -PhumanAddonDir="../Kizuna-Meridian-Human-Addon" -PuiSmoke
 xvfb-run -a -s "-screen 0 1920x1200x24" ./gradlew -PhumanAddonDir="../Kizuna-Meridian-Human-Addon" -PplayerAnimationDir="/path/to/animation-checkout" -PresponsiveSmoke=true :client:runDemo
 ```
 
-资源加载后普通演示自动打开工作台中的“身体”和“修炼”窗口，后者在前。演示使用 Human 可信出生函数创建独立内存身体并接入真实聚气核心；`uiSmoke` 只打开身体窗口，使用只读样例进行原有模型回归。模型始终来自 Human 客户端 JAR。JavaExec 固定使用 Java 17。成功的模型 smoke 正常退出，在 `client/build/demo/body-smoke-ok.txt` 写入结果，`screenshots/` 保存各层与聚焦截图。
+资源加载后普通演示自动打开工作台中的“检视”和“吐纳”窗口，后者在前。演示使用 Human 可信出生函数创建独立内存身体并接入真实聚气核心；`uiSmoke` 只打开检视窗口，使用只读样例进行模型回归。模型始终来自 Human 客户端 JAR。JavaExec 固定使用 Java 17。成功的模型 smoke 正常退出，在 `client/build/demo/body-smoke-ok.txt` 写入结果，`screenshots/` 保存各层与聚焦截图。
 
 验收覆盖五层、真实 Screen 点击心脏、相机聚焦完成、快照刷新保留视角、中键清除选择、快照不变和窗口清理。演示代码与 Human 的依赖只属于 `src/demo`，不进入正式 UI JAR。具体宿主接口见[模型接入](Body-Viewer.md)。
 

@@ -5,7 +5,7 @@
             <flow-layout direction="vertical">
                 <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
                 <children>
-                    <label id="body-title"><text>身体 · 只读预览</text><color>#FFE8D9AD</color></label>
+                    <label id="body-title"><text>检视</text><color>#FFE8D9AD</color></label>
                     <scroll id="layers-scroll" direction="vertical">
                         <flow-layout id="layers" direction="ltr-text-flow">
                             <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>

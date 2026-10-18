@@ -61,6 +61,10 @@ public final class BodyPreviewDemo implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         // 演示只在资源就绪的标题界面启动，不连接服务器或修改玩家存档。
+        if (Boolean.getBoolean("meridian.ui.openingSmoke")) {
+            new OpeningPreviewCheck().register();
+            return;
+        }
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             try {
                 tick(client);
@@ -88,6 +92,11 @@ public final class BodyPreviewDemo implements ClientModInitializer {
             TimeCursor time = TimeCursor.newBuilder().setDomain("demo:preview").setEpoch("preview").setElapsedMillis(0).build();
             original = HumanBirth.candidate(template, "preview-body", time);
             snapshot = BodySnapshot.parseFrom(original);
+            if (smoke) {
+                // 全模型回归需要通灵才能检视全部经脉；交互演示仍使用实际醒灵初值。
+                snapshot = snapshot.toBuilder().setRealm(Realm.SPIRITUAL_ATTUNEMENT).build();
+                original = snapshot.toByteArray();
+            }
             // Human 的资源属于它自己的 JAR；演示为纯 Java 内容包挂载客户端资源目录。
             module.present(snapshot, new Identifier("meridian_human", "meridian/adult.pb"));
             var runtime = InventoryUiClient.runtime();
@@ -109,8 +118,8 @@ public final class BodyPreviewDemo implements ClientModInitializer {
             if (smoke) {
                 verifyVanillaShape();
             } else {
-                // 手动验收可直接打开本轮正在制作的层，生产窗口仍从内容包的首层开始。
-                String preview = System.getProperty("meridian.ui.previewLayer", "assembly");
+                // 普通演示与生产使用相同默认层；专项验收仍可显式切换内部装配。
+                String preview = System.getProperty("meridian.ui.previewLayer", "surface");
                 if (preview.equals("assembly")) {
                     module.panel().layer("skeleton");
                     module.panel().setLayerVisible("muscles", true);

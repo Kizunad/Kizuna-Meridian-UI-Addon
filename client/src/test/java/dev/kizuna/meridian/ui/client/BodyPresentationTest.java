@@ -2,11 +2,76 @@ package dev.kizuna.meridian.ui.client;
 
 import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
+import dev.kizuna.meridian.protocol.pb.OperationUiMessages.*;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
 /** 整体保护：资源边界与非人体内容映射，防止 UI 偷偷依赖人体命名。 */
 public class BodyPresentationTest {
+    @Test
+    public void meridianSummaryUsesSnapshotWithoutInterpretingAddonConditions() {
+        // 非人构型只按权威库存、容量和开拓进度展示，条件由内容包发布卡片。
+        var body = BodySnapshot.newBuilder().setStructure(BodyStructure.newBuilder()
+                        .addMeridians(MeridianDefinition.newBuilder().setId("tip").setLumenCapacity(8)))
+                .addMeridianStates(MeridianState.newBuilder().setId("tip").setCondition(MeridianCondition.INTACT)
+                        .setLumenQi(QiInventory.newBuilder().addEntries(Qi.newBuilder().setAmount(4)))
+                        .setOpening(MeridianOpening.newBuilder().setStage(MeridianOpeningStage.IN_PROGRESS).setProgress(.25))).build();
+        var summary = OpeningCards.summary(body, "tip");
+        assertEquals(.5, meter(summary, "storage").getFraction(), 0);
+        assertEquals(.25, meter(summary, "opening").getFraction(), 0);
+        assertEquals(OperationMeterState.METER_READY, meter(summary, "condition").getState());
+    }
+
+    private static MeridianOperationMeter meter(MeridianOperationView view, String id) {
+        // 回归断言针对公开卡片含义，不依赖绘制实现或具体文字数值格式。
+        return view.getMetersList().stream().filter(item -> item.getId().equals(id)).findFirst().orElseThrow();
+    }
+
+    @Test
+    public void addonOperationsKeepNamespacesRevisionsAndUnloadSeparate() {
+        // 两个附属共用同一目标；重复注册、过期数据和卸载不得影响另一方。
+        var registry = new MeridianOperations();
+        var requests = new java.util.ArrayList<MeridianOperationRequest>();
+        Runnable remove = registry.register("first", requests::add);
+        registry.register("second", requests::add);
+        assertThrows(IllegalArgumentException.class, () -> registry.register("first", requests::add));
+        var body = BodySnapshot.newBuilder().setId("body").setRevision(4)
+                .addMeridianStates(MeridianState.newBuilder().setId("tendril")).build();
+        for (String namespace : java.util.List.of("first", "second")) {
+            registry.update(body, MeridianOperationUpdate.newBuilder().setProtocolVersion(1).setNamespace(namespace)
+                    .setBodyId("body").setBodyRevision(4).addOperations(MeridianOperationView.newBuilder()
+                            .setId(namespace + ":guide").setVersion(1).setMeridianId("tendril")
+                            .setTitle("引导").setActionId("start").setEnabled(true)).build());
+        }
+        assertEquals(2, registry.views(body, "tendril").size());
+        assertTrue(registry.views(body, "tendril").stream().allMatch(MeridianOperationView::getEnabled));
+        assertTrue(registry.views(body.toBuilder().setRevision(5).build(), "tendril").stream().noneMatch(MeridianOperationView::getEnabled));
+        assertThrows(IllegalArgumentException.class, () -> registry.update(body,
+                MeridianOperationUpdate.newBuilder().setProtocolVersion(1).setNamespace("first").setBodyId("body").setBodyRevision(3).build()));
+        registry.send(MeridianOperationRequest.newBuilder().setOperationId("second:guide").build());
+        assertEquals(1, requests.size());
+        remove.run();
+        assertEquals("second:guide", registry.views(body, "tendril").get(0).getId());
+        registry.clear();
+        assertTrue(registry.views(body, "tendril").isEmpty());
+    }
+
+    @Test
+    public void sharedQiProjectionDoesNotCountReservationsTwice() {
+        // 到账、外壁、器官输入、缓存和在途各有唯一账户，原料与真元不会偷换统计口径。
+        var inventory = QiInventory.newBuilder().addEntries(Qi.newBuilder().setAmount(2)).build();
+        var body = BodySnapshot.newBuilder().setStructure(BodyStructure.newBuilder()
+                        .addMeridians(MeridianDefinition.newBuilder().setId("channel").addPorts(Port.newBuilder().setId("in")))
+                        .addConnections(Connection.newBuilder().setId("route").setTo("in")))
+                .addMeridianStates(MeridianState.newBuilder().setId("channel").setLumenQi(inventory).setWallQi(inventory))
+                .addOrganStates(OrganState.newBuilder().setBuffer(inventory).setProcess(OrganProcess.newBuilder()
+                        .setRecipe(OrganRecipe.newBuilder().setInput(inventory))))
+                .addTransits(QiTransit.newBuilder().setConnectionId("route").setCargo(inventory)).build();
+        assertEquals(2, QiDisplay.lumen(body), 0);
+        assertEquals(2, QiDisplay.incoming(body, "channel"), 0);
+        assertEquals(10, QiDisplay.total(body), 0);
+    }
+
     @Test
     public void tissueDetailsShowAuthoritativeActionOccupancyAndRecovery() {
         // 用非人体组织验证通用窗口不硬编码人体动作，也不在客户端推算资源恢复。
@@ -38,6 +103,13 @@ public class BodyPresentationTest {
         assertTrue(BodyInformation.lines(body, node).contains("HP：3.00 / 9.00"));
         assertTrue(BodyInformation.lines(body, node).contains("缓存：0.25 / 4.00 元"));
 
+        // 生物内容声明自己的展示层级；缺省保持可见，未解锁节点不能进入选择列表。
+        assertTrue(BodyScene.realmAllows(body, node));
+        BodyVisual gated = node.toBuilder().setMinimumRealm(Realm.MERIDIAN_CONDENSATION).build();
+        assertFalse(BodyScene.realmAllows(body.toBuilder().setRealm(Realm.AWAKENING).build(), gated));
+        assertTrue(BodyScene.realmAllows(body.toBuilder().setRealm(Realm.MERIDIAN_CONDENSATION).build(), gated));
+        assertTrue(BodyScene.realmAllows(body.toBuilder().setRealm(Realm.VOID_TRANSFORMATION).build(), gated));
+
         // 身体移除器官后停止关联，旧模型不能捏造状态；模板变更必须明确拒绝。
         assertFalse(BodyScene.exists(body.toBuilder().clearStructure().build(), node));
         assertThrows(IllegalArgumentException.class, () -> scene.requireTemplate(body.toBuilder()
@@ -56,6 +128,8 @@ public class BodyPresentationTest {
                 .build().toByteArray()));
         assertThrows(IllegalArgumentException.class, () -> new BodyScene(valid.toBuilder()
                 .addVisuals(valid.getVisuals(0)).build().toByteArray()));
+        assertThrows(IllegalArgumentException.class, () -> new BodyScene(valid.toBuilder()
+                .setVisuals(0, valid.getVisuals(0).toBuilder().setMinimumRealmValue(999)).build().toByteArray()));
 
         // 贴图是公开内容资源：完整 UV 可读取，外部 URL、缺失坐标和非有限值必须拒绝。
         var textured = valid.getVisuals(0).toBuilder().setTextureResource("crystal_beast:textures/crystal.png")
@@ -68,6 +142,27 @@ public class BodyPresentationTest {
                 .setVisuals(0, textured.clone().setTextureResource("https://example.com/crystal.png")).build().toByteArray()));
         assertThrows(IllegalArgumentException.class, () -> new BodyScene(valid.toBuilder()
                 .setVisuals(0, textured.clone().setTextureUv(0, ModelUv.newBuilder().setU(Float.NaN))).build().toByteArray()));
+
+        // 默认层必须真实存在；未声明的旧资源仍从首层进入。
+        assertEquals("crystals", new BodyScene(valid.toByteArray()).defaultLayerId());
+        var layered = valid.toBuilder().addLayers(PresentationLayer.newBuilder().setId("outside").setDisplayName("外层"))
+                .setDefaultLayerId("outside");
+        assertEquals("outside", new BodyScene(layered.build().toByteArray()).defaultLayerId());
+        assertThrows(IllegalArgumentException.class,
+                () -> new BodyScene(layered.clone().setDefaultLayerId("missing").build().toByteArray()));
+
+        // 皮肤变体共享三角索引，缺失、越界或非有限坐标不能等到切换臂型时才暴露。
+        var skin = PlayerSkinAppearance.newBuilder().addAllSlimVertices(textured.getVerticesList())
+                .addAllSlimTextureUv(textured.getTextureUvList());
+        new BodyScene(valid.toBuilder().setVisuals(0, textured.clone().setPlayerSkin(skin)).build().toByteArray());
+        assertThrows(IllegalArgumentException.class, () -> new BodyScene(valid.toBuilder()
+                .setVisuals(0, textured.clone().setPlayerSkin(skin.clone().clearSlimVertices())).build().toByteArray()));
+        assertThrows(IllegalArgumentException.class, () -> new BodyScene(valid.toBuilder()
+                .setVisuals(0, textured.clone().setPlayerSkin(skin.clone()
+                        .setSlimVertices(0, ModelPoint.newBuilder().setX(2)))).build().toByteArray()));
+        assertThrows(IllegalArgumentException.class, () -> new BodyScene(valid.toBuilder()
+                .setVisuals(0, textured.clone().setPlayerSkin(skin.clone()
+                        .setSlimTextureUv(0, ModelUv.newBuilder().setU(Float.NaN)))).build().toByteArray()));
     }
 
     private static BodyPresentation presentation() {

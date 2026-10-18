@@ -2,14 +2,46 @@ package dev.kizuna.meridian.ui.client;
 
 /** 展示层错误集中定义，身体请求仍使用框架 Protobuf 失败码。 */
 public final class UiErrors {
+    public static final String INVALID_OPERATION = "经脉操作的命名空间、身体版本或进度数据无效";
+    public static final String OPERATION_TUTORIAL_SAVE = "无法保存经脉操作指引偏好";
+
+    public static String operationFailure(dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode code) {
+        // 其他附属的错误不套用开脉专属解释，具体调整由其卡片 hint 补充。
+        return switch (code) {
+            case REVISION_CONFLICT -> "身体状态已变化，等待此操作刷新后再试";
+            case ACCESS_DENIED -> "宿主未允许本次操作";
+            case BODY_DEAD -> "身体已经死亡，无法操作";
+            default -> "操作未完成（" + code.name() + "）";
+        };
+    }
     public static final String TUTORIAL_SAVE = "无法保存吐纳指引已读偏好";
     public static final String GATHERING_UNAVAILABLE = "聚气连接不可用，请重新连接或刷新。";
     public static final String BREATHING_UNAVAILABLE = "服务器尚未提供吐纳能力，请检查生物附属的宿主接入。";
+    public static final String OPENING_UNAVAILABLE = "宿主尚未提供此经脉的开拓规则或操作连接。";
+    public static final String OPENING_TIMEOUT = "操作回执尚未到达，请查看最新状态后再试。";
+    public static final String SELECT_MERIDIAN = "尚未选择经脉。";
+
+    public static String openingFailure(dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode code) {
+        // 公开失败码对应可采取的调整，不从异常字符串推断成功或失败。
+        return switch (code) {
+            case INSUFFICIENT_QI -> "全身内腔储量不足，请先吐纳补充真元。";
+            case OPENING_BUSY -> "已有经脉正在操作，请先暂停当前任务。";
+            case MERIDIAN_ALREADY_OPENED -> "此经脉已经拓宽。";
+            case OPENING_REQUIREMENTS_UNMET -> "开拓条件未满足，请检查储量、器官耐力和精力。";
+            case OPENING_NOT_ACTIVE -> "当前没有正在执行的开脉任务。";
+            case OPENING_RULE_NOT_FOUND -> OPENING_UNAVAILABLE;
+            case REVISION_CONFLICT -> "身体状态刚刚变化，请根据最新数值重新操作。";
+            case ACCESS_DENIED -> "当前没有操作这具身体的权限。";
+            case BODY_DEAD -> "身体已经死亡，无法操作经脉。";
+            case MODULE_UNAVAILABLE, ROUTE_UNAVAILABLE -> "经脉、器官或通路失能，请查看身体状态。";
+            default -> "操作未完成：" + code.name();
+        };
+    }
 
     public static String gatheringFailure(dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode code) {
         // 失败原因同时指向调整入口，不通过服务端异常文案猜测业务状态。
         return switch (code) {
-            case CAPACITY_EXCEEDED -> "器官或目标经脉空间不足，请切换目标。";
+            case CAPACITY_EXCEEDED -> "器官或目标经脉已满，等待真元转移或拓宽经脉。";
             case INSUFFICIENT_QI -> "所选原料不足，请切换配方或更换修炼地点。";
             case ENVIRONMENT_BUDGET_EXCEEDED -> "区域供给已被占用，请稍后重试。";
             case ENVIRONMENT_UNAVAILABLE, ENVIRONMENT_INTERVAL_INVALID -> "当前环境无法供给本轮灵气，请刷新后重试。";

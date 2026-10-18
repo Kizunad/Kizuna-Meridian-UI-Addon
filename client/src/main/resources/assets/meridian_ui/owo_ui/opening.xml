@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<owo-ui>
+    <templates>
+        <meridian-panel>
+            <flow-layout direction="vertical">
+                <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+                <children>
+                    <label id="title"><text>经脉 · 内观</text><color>#FFE8D9AD</color></label>
+                    <flow-layout id="info" direction="vertical"/>
+                    <flow-layout id="scene" direction="vertical">
+                        <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+                    </flow-layout>
+                </children>
+            </flow-layout>
+        </meridian-panel>
+        <opening-detail>
+            <flow-layout direction="vertical">
+                <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+                <children>
+                    <label id="selection-title"><text>经脉</text><color>#FFE8D9AD</color></label>
+                    <flow-layout id="status" direction="vertical">
+                        <children>
+                            <label id="status-text">
+                                <text>等待选择</text><color>#FF9ABBB2</color>
+                                <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
+                            </label>
+                        </children>
+                    </flow-layout>
+                    <scroll id="details" direction="vertical">
+                        <flow-layout id="meters" direction="vertical">
+                            <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
+                            <padding><right>5</right></padding>
+                        </flow-layout>
+                        <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+                    </scroll>
+                    <flow-layout id="feedback" direction="vertical">
+                        <children>
+                            <label id="feedback-text">
+                                <text>操作未完成</text><color>#FFAFB9AE</color>
+                                <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
+                            </label>
+                        </children>
+                    </flow-layout>
+                    <flow-layout id="choice" direction="vertical"/>
+                    <flow-layout id="operation" direction="vertical"/>
+                </children>
+            </flow-layout>
+        </opening-detail>
+    </templates>
+</owo-ui>

@@ -1,6 +1,7 @@
 package dev.kizuna.meridian.ui.client;
 
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
+import dev.kizuna.meridian.protocol.pb.BodyMessages.Realm;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
 import com.google.protobuf.InvalidProtocolBufferException;
 import java.util.HashSet;
@@ -42,12 +43,17 @@ public final class BodyScene {
         if (layers.isEmpty() || presentation.getVisualsCount() == 0 || presentation.getVisualsCount() > 2048) {
             throw UiErrors.invalid(UiErrors.INVALID_COUNT);
         }
+        if (!presentation.getDefaultLayerId().isEmpty() && !layers.contains(presentation.getDefaultLayerId())) {
+            throw UiErrors.invalid(UiErrors.INVALID_LAYERS);
+        }
         Set<String> identities = new HashSet<>();
         for (BodyVisual node : presentation.getVisualsList()) {
             if (node.getId().isBlank() || !identities.add(node.getId()) || node.getDisplayName().isBlank()
                     || !layers.contains(node.getLayerId()) || node.getTargetId().isBlank()
                     || node.getTargetKind() == BodyTargetKind.BODY_TARGET_KIND_UNSPECIFIED
-                    || node.getTargetKind() == BodyTargetKind.UNRECOGNIZED || (node.getColorRgb() & 0xff000000) != 0) {
+                    || node.getTargetKind() == BodyTargetKind.UNRECOGNIZED
+                    || node.getMinimumRealm() == Realm.UNRECOGNIZED
+                    || (node.getColorRgb() & 0xff000000) != 0) {
                 throw UiErrors.invalid(UiErrors.INVALID_NODE + node.getId());
             }
             if (node.getVerticesCount() < 3 || node.getTrianglesCount() == 0 || node.getTrianglesCount() % 3 != 0) {
@@ -67,6 +73,24 @@ public final class BodyScene {
                 }
             }
             validateTexture(node);
+            if (node.hasPlayerSkin()) {
+                // 窄臂变体与基础网格共用索引，绘制与点击都必须读取同一套有效坐标。
+                PlayerSkinAppearance skin = node.getPlayerSkin();
+                if (node.getTextureResource().isEmpty()
+                        || skin.getSlimVerticesCount() != node.getVerticesCount()
+                        || skin.getSlimTextureUvCount() != node.getVerticesCount()) {
+                    throw UiErrors.invalid(UiErrors.INVALID_TEXTURE + node.getId());
+                }
+                for (ModelPoint vertex : skin.getSlimVerticesList()) {
+                    finite(vertex);
+                    if (vertex.getX() < minimum.getX() || vertex.getX() > maximum.getX()
+                            || vertex.getY() < minimum.getY() || vertex.getY() > maximum.getY()
+                            || vertex.getZ() < minimum.getZ() || vertex.getZ() > maximum.getZ()) {
+                        throw UiErrors.invalid(UiErrors.OUTSIDE_BOUNDS + node.getId());
+                    }
+                }
+                validateUvs(skin.getSlimTextureUvList(), node.getId());
+            }
         }
         if (presentation.hasBreathing()) {
             // 入口属于内容模型，先校验所在层与坐标；动画挂点交给对应动画适配器确认。
@@ -91,10 +115,15 @@ public final class BodyScene {
                 || node.getTextureUvCount() != node.getVerticesCount()) {
             throw UiErrors.invalid(UiErrors.INVALID_TEXTURE + node.getId());
         }
-        for (ModelUv uv : node.getTextureUvList()) {
+        validateUvs(node.getTextureUvList(), node.getId());
+    }
+
+    private static void validateUvs(List<ModelUv> coordinates, String nodeId) {
+        // 两种皮肤尺寸遵守同一坐标边界，防止切换窄臂外观后绕过资源校验。
+        for (ModelUv uv : coordinates) {
             if (!Float.isFinite(uv.getU()) || !Float.isFinite(uv.getV())
                     || uv.getU() < 0 || uv.getU() > 1 || uv.getV() < 0 || uv.getV() > 1) {
-                throw UiErrors.invalid(UiErrors.INVALID_TEXTURE + node.getId());
+                throw UiErrors.invalid(UiErrors.INVALID_TEXTURE + nodeId);
             }
         }
     }
@@ -110,6 +139,14 @@ public final class BodyScene {
     public BodyPresentation presentation() {
         // Protobuf 消息不可变，调用方不能直接修改已校验内容。
         return presentation;
+    }
+
+    public String defaultLayerId() {
+        // 默认展示由内容声明，不根据人体层名称或列表顺序猜测。
+        if (!presentation.getDefaultLayerId().isEmpty()) {
+            return presentation.getDefaultLayerId();
+        }
+        return presentation.getLayers(0).getId();
     }
 
     public List<BodyVisual> layer(String layerId) {
@@ -134,5 +171,13 @@ public final class BodyScene {
             case MERIDIAN -> body.getStructure().getMeridiansList().stream().anyMatch(value -> value.getId().equals(id));
             default -> false;
         };
+    }
+
+    public static boolean realmAllows(BodySnapshot body, BodyVisual node) {
+        // 未设置门槛的通用资源直接可见；已声明层级时只读取权威境界，不从储量猜测升境。
+        if (node.getMinimumRealm() == Realm.REALM_UNSPECIFIED) {
+            return true;
+        }
+        return body.getRealm() != Realm.UNRECOGNIZED && body.getRealmValue() >= node.getMinimumRealmValue();
     }
 }

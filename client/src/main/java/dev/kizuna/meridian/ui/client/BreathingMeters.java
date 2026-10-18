@@ -82,23 +82,27 @@ final class BreathingMeters {
 
         // 每个账户各计一次；在途占用目的容量，不能再增加最大值。
         BodySnapshot body = view.getBody();
-        double totalQi = 0;
-        for (MeridianState meridian : body.getMeridianStatesList()) {
-            totalQi += amount(meridian.getLumenQi()) + amount(meridian.getWallQi());
-        }
-        for (OrganState organ : body.getOrganStatesList()) {
-            totalQi += amount(organ.getBuffer());
-            if (organ.hasProcess()) {
-                totalQi += amount(organ.getProcess().getRecipe().getInput());
-            }
-        }
-        for (QiTransit transit : body.getTransitsList()) {
-            totalQi += amount(transit.getCargo());
-        }
+        double totalQi = QiDisplay.total(body);
         double maximumQi = body.getStructure().getMeridiansList().stream()
                 .mapToDouble(meridian -> meridian.getLumenCapacity() + meridian.getWallCapacity()).sum();
         maximumQi += body.getStructure().getOrgansList().stream().mapToDouble(OrganDefinition::getQiCapacity).sum();
-        qi.tooltip(List.of(
+        // 将尚未入脉的实际缓存和器官出口在途单独列出，方便区分捕获成功与配送等待。
+        double bufferedQi = body.getOrganStatesList().stream()
+                .filter(organ -> breath.getOrganIdsList().contains(organ.getId()))
+                .flatMap(organ -> organ.getBuffer().getEntriesList().stream()).mapToDouble(Qi::getAmount).sum();
+        var outputPorts = body.getStructure().getOrgansList().stream()
+                .filter(organ -> breath.getOrganIdsList().contains(organ.getId()))
+                .flatMap(organ -> organ.getPortsList().stream()).map(Port::getId).toList();
+        var outputRoutes = body.getStructure().getConnectionsList().stream()
+                .filter(route -> outputPorts.contains(route.getFrom())).map(Connection::getId).toList();
+        double inTransitQi = body.getTransitsList().stream()
+                .filter(transit -> outputRoutes.contains(transit.getConnectionId()))
+                .flatMap(transit -> transit.getCargo().getEntriesList().stream()).mapToDouble(Qi::getAmount).sum();
+        var qiDetails = new java.util.ArrayList<Text>(List.of(
+                Text.literal(String.format(Locale.ROOT, "本次连接摄入灵气 %.2f 元", breath.getAbsorbedQi())),
+                Text.literal(String.format(Locale.ROOT, "炼化后累计入脉 %.2f 元", breath.getStoredQi())),
+                Text.literal(String.format(Locale.ROOT, "呼吸器官缓存 %.2f 元 · 运往经脉 %.2f 元", bufferedQi, inTransitQi)),
+                Text.literal(String.format(Locale.ROOT, "当前经脉内腔 %.2f 元", QiDisplay.lumen(body))),
                 Text.literal(String.format(Locale.ROOT, "身体总真元量 %.2f 元", totalQi)),
                 Text.literal(String.format(Locale.ROOT, "最大真元量 %.2f 元", maximumQi))));
 
@@ -109,14 +113,11 @@ final class BreathingMeters {
         String feedback = breath.getStatus();
         if (!visibleError.isEmpty()) {
             feedback = visibleError;
+            qiDetails.add(Text.literal(visibleError));
         }
+        qi.tooltip(qiDetails);
         // 详细状态随按钮悬浮显示，底部始终只保留操作按钮和相机提示。
         action.tooltip(Text.literal(feedback));
-    }
-
-    private static double amount(QiInventory inventory) {
-        // 展示只汇总权威账户明细，派生总量不会回写身体。
-        return inventory.getEntriesList().stream().mapToDouble(Qi::getAmount).sum();
     }
 
     private final class AirGauge extends BaseComponent {
@@ -185,7 +186,7 @@ final class BreathingMeters {
         public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
             // 纳入量保留两位，能看出每次小批吐纳的变化。
             var font = MinecraftClient.getInstance().textRenderer;
-            String caption = String.format(Locale.ROOT, "纳入 %.2f 真元", breath.getAbsorbedQi());
+            String caption = String.format(Locale.ROOT, "纳入 %.2f 真元", breath.getStoredQi());
             context.drawText(font, font.trimToWidth(caption, width), x, y + 8, 0xFFA8C8C0, false);
         }
     }

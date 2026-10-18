@@ -55,7 +55,7 @@ public final class BodyPanel {
             layers.child(checkbox);
         }
         root = new ResponsiveLayout(content, this::arrange);
-        layer(scene.presentation().getLayers(0).getId());
+        layer(scene.defaultLayerId());
     }
 
     private void arrange(int width, int height) {
@@ -149,9 +149,10 @@ public final class BodyPanel {
     }
 
     private void refreshObjects() {
-        // 多层合并后使用真实深度遮挡；已移除对象不再参与显示和命中。
+        // 多层合并后使用真实深度遮挡；移除或尚未解锁的对象不参与显示和命中。
         visible = scene.presentation().getVisualsList().stream()
                 .filter(node -> visibleLayers.contains(node.getLayerId()))
+                .filter(node -> BodyScene.realmAllows(body, node))
                 .filter(node -> BodyScene.exists(body, node)).toList();
         canvas.visible(visible);
     }
@@ -166,7 +167,7 @@ public final class BodyPanel {
     private void showInformation() {
         // 普通状态更新只替换文字，让玩家已调整的镜头与选择保持稳定。
         if (selected == null) {
-            information.text(Text.literal("身体信息\n\n点击模型查看部位介绍、血量与能力。\n\n可同时勾选多个渲染层。\n外层会自然遮挡内部，取消勾选即可逐层查看。\n\n可见对象：" + visible.size()));
+            information.text(Text.literal("检视\n\n点击体表查看部位介绍、血量与状态。\n\n可切换渲染层查看内部。\n外层会自然遮挡内部，取消勾选即可逐层查看。"));
             return;
         }
         information.text(Text.literal(String.join("\n", BodyInformation.lines(body, selected))));
@@ -174,7 +175,8 @@ public final class BodyPanel {
 
     public void select(BodyVisual node) {
         // 同一个选择同时驱动高亮、相机与信息，避免三个状态分别漂移。
-        if (!visibleLayers.contains(node.getLayerId()) || !BodyScene.exists(body, node)) {
+        if (!visibleLayers.contains(node.getLayerId()) || !BodyScene.exists(body, node)
+                || !BodyScene.realmAllows(body, node)) {
             return;
         }
         selected = node;
@@ -183,17 +185,18 @@ public final class BodyPanel {
     }
 
     public void update(BodySnapshot snapshot) {
-        // 同一身体按版本递增替换显示；结构变化时重建可选节点并重新检查选择。
+        // 同一身体按版本递增替换显示；结构或境界变化都可能改变可选节点。
         scene.requireTemplate(snapshot);
         if (!body.getId().equals(snapshot.getId()) || snapshot.getRevision() < body.getRevision()) {
             throw UiErrors.invalid(UiErrors.STALE_BODY);
         }
         boolean structureChanged = !body.getStructure().equals(snapshot.getStructure());
+        boolean realmChanged = body.getRealm() != snapshot.getRealm();
         body = snapshot;
-        if (structureChanged) {
+        if (structureChanged || realmChanged) {
             refreshObjects();
         }
-        if (selected != null && !BodyScene.exists(body, selected)) {
+        if (selected != null && (!BodyScene.exists(body, selected) || !BodyScene.realmAllows(body, selected))) {
             overview();
             return;
         }
