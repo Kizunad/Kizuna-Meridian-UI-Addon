@@ -1,20 +1,27 @@
 package dev.kizuna.meridian.ui.client;
 
 import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
+import dev.kizuna.meridian.protocol.QiDensity;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
+import dev.kizuna.meridian.ui.api.MeridianRouteProvider;
+import dev.kizuna.meridian.ui.api.MeridianRouteProvider.Point;
 import java.util.*;
 import org.joml.Vector3f;
 
 /** 从真实在途和经脉网格提取展示轨迹；路径缓存随构型变化失效。 */
-final class MeridianFlow {
+public final class MeridianFlow {
     private final Map<String, BodyVisual> visuals = new HashMap<>();
+    private final BodyScene scene;
+    private final MeridianRouteProvider routeProvider;
     private final Map<String, List<Vector3f>> routes = new HashMap<>();
     private final Map<String, Flight> flights = new LinkedHashMap<>();
     private final Set<String> lockedPorts = new HashSet<>();
     private BodyStructure structure;
 
-    MeridianFlow(BodyScene scene) {
+    MeridianFlow(BodyScene scene, MeridianRouteProvider routeProvider) {
         // 模型绑定来自生物内容；不按左右、名称或人体经脉数量猜测路径。
+        this.scene = scene;
+        this.routeProvider = Objects.requireNonNull(routeProvider, UiErrors.REQUIRED_ROUTE_PROVIDER);
         for (BodyVisual node : scene.presentation().getVisualsList()) {
             if (node.getTargetKind() == BodyTargetKind.MERIDIAN || node.getTargetKind() == BodyTargetKind.ORGAN) {
                 visuals.putIfAbsent(node.getTargetKind().name() + ":" + node.getTargetId(), node);
@@ -45,7 +52,25 @@ final class MeridianFlow {
         }
         Set<String> current = new HashSet<>();
         for (QiTransit transit : body.getTransitsList()) {
-            boolean freeQi = transit.getCargo().getEntriesList().stream().anyMatch(qi -> qi.getPhase() == QiPhase.FREE);
+            if (transit.hasCircuit()) {
+                // 受控闭环按权威工作进度沿整条真实路线显示，不按单段到达时间猜测位置。
+                var path = new ArrayList<Vector3f>();
+                for (String routeId : transit.getCircuit().getConnectionIdsList()) {
+                    if (hiddenConnections.contains(routeId)) {
+                        path.clear();
+                        break;
+                    }
+                    path.addAll(routes.computeIfAbsent(routeId, this::route));
+                }
+                if (path.size() >= 2) {
+                    current.add(transit.getId());
+                    double progress = transit.getCircuit().getWorkMillis() / transit.getCircuit().getDurationMillis();
+                    flights.put(transit.getId(), new Flight(path, System.nanoTime(), 1, progress));
+                }
+                continue;
+            }
+            boolean freeQi = transit.getCargo().getEntriesList().stream()
+                    .anyMatch(qi -> QiDensity.phase(qi.getDensity()) == QiPhase.FREE);
             if (transit.getStatus() != TransitStatus.MOVING || !freeQi || current.size() >= 96
                     || hiddenConnections.contains(transit.getConnectionId())) {
                 continue;
@@ -67,7 +92,7 @@ final class MeridianFlow {
     }
 
     private List<Vector3f> route(String connectionId) {
-        // 运输方向来自权威连接端口；沿两个经脉网格的边寻找弯曲路径。
+        // 运输方向来自权威连接端口；已存在的连接必须能绑定两端模型与路线。
         Connection connection = structure.getConnectionsList().stream()
                 .filter(item -> item.getId().equals(connectionId)).findFirst().orElse(null);
         if (connection == null) {
@@ -76,12 +101,38 @@ final class MeridianFlow {
         BodyVisual from = owner(connection.getFrom());
         BodyVisual to = owner(connection.getTo());
         if (from == null || to == null) {
-            return List.of();
+            throw UiErrors.invalid(UiErrors.MISSING_CONNECTION_ENDPOINT);
         }
-        List<Vector3f> incoming = branch(from, center(to));
+        // 客户端扩展只在真实连接与两端模型齐全后提供交汇点，不增加运输或改变耗时。
+        List<Point> waypoints = waypoints(connection);
+        Point first = waypoints.get(0);
+        Vector3f sourceJunction = new Vector3f(first.x(), first.y(), first.z());
+        List<Vector3f> incoming = branch(from, sourceJunction);
         Collections.reverse(incoming);
-        incoming.addAll(branch(to, incoming.isEmpty() ? center(from) : incoming.get(incoming.size() - 1)));
+        for (Point point : waypoints) {
+            incoming.add(new Vector3f(point.x(), point.y(), point.z()));
+        }
+        incoming.addAll(branch(to, incoming.get(incoming.size() - 1)));
         return List.copyOf(incoming);
+    }
+
+    private List<Point> waypoints(Connection connection) {
+        // 先取得必需路线，再检查点数与模型边界；错误不能被默认网格路径掩盖。
+        List<Point> points = routeProvider.waypoints(scene.presentation(), structure, connection);
+        if (points == null || points.size() < 2 || points.size() > 256) {
+            throw UiErrors.invalid(UiErrors.INVALID_CONNECTION_PATH);
+        }
+        ModelPoint minimum = scene.presentation().getMinimum();
+        ModelPoint maximum = scene.presentation().getMaximum();
+        for (Point point : points) {
+            if (point == null || !Float.isFinite(point.x()) || !Float.isFinite(point.y()) || !Float.isFinite(point.z())
+                    || point.x() < minimum.getX() || point.x() > maximum.getX()
+                    || point.y() < minimum.getY() || point.y() > maximum.getY()
+                    || point.z() < minimum.getZ() || point.z() > maximum.getZ()) {
+                throw UiErrors.invalid(UiErrors.INVALID_CONNECTION_PATH);
+            }
+        }
+        return List.copyOf(points);
     }
 
     private BodyVisual owner(String port) {
@@ -97,16 +148,7 @@ final class MeridianFlow {
                 .map(organ -> visuals.get("ORGAN:" + organ.getId())).filter(Objects::nonNull).findFirst().orElse(null);
     }
 
-    private static Vector3f center(BodyVisual visual) {
-        // 以资源顶点的几何中心定位邻脉，不新增人体空间表。
-        Vector3f center = new Vector3f();
-        for (ModelPoint point : visual.getVerticesList()) {
-            center.add(point.getX(), point.getY(), point.getZ());
-        }
-        return center.div(visual.getVerticesCount());
-    }
-
-    private static List<Vector3f> branch(BodyVisual visual, Vector3f junction) {
+    public static List<Vector3f> branch(BodyVisual visual, Vector3f junction) {
         // 网格边构成有限图；从最接近交汇处的顶点向最远端取路径，保留曲折和缠绕。
         // UV 接缝会复制同位置顶点；先焊接空间坐标，避免轨迹被切成独立的三角面。
         Map<ModelPoint, Integer> welded = new LinkedHashMap<>();
@@ -174,12 +216,19 @@ final class MeridianFlow {
         private final double[] lengths;
         private final long startedNanos;
         private final long durationMillis;
+        private final double controlledProgress;
 
         Flight(List<Vector3f> points, long startedNanos, long durationMillis) {
+            // 普通运输仍沿原到达时长插值。
+            this(points, startedNanos, durationMillis, -1);
+        }
+
+        Flight(List<Vector3f> points, long startedNanos, long durationMillis, double controlledProgress) {
             // 弧长让光点匀速经过长短不同的网格边，速度只用于表现。
             this.points = points;
             this.startedNanos = startedNanos;
             this.durationMillis = durationMillis;
+            this.controlledProgress = controlledProgress;
             lengths = new double[points.size()];
             for (int index = 1; index < points.size(); index++) {
                 lengths[index] = lengths[index - 1] + points.get(index - 1).distance(points.get(index));
@@ -189,6 +238,9 @@ final class MeridianFlow {
         Vector3f point(long now, double trail) {
             // 到达预期终点后等下一份权威快照，不循环制造第二份运输。
             double progress = Math.max(0, Math.min(1, (now - startedNanos) / (durationMillis * 1_000_000.0) - trail));
+            if (controlledProgress >= 0) {
+                progress = Math.max(0, controlledProgress - trail);
+            }
             double distance = progress * lengths[lengths.length - 1];
             for (int index = 1; index < lengths.length; index++) {
                 if (lengths[index] >= distance) {

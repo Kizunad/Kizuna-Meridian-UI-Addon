@@ -17,18 +17,18 @@ final class OpeningCards {
     }
 
     static MeridianOperationView summary(BodySnapshot body, String target) {
-        // 真实储量与在途预约分别绘制，稳定容量和开脉增压目标分开表达。
+        // 真实储量与在途预约分别绘制，占用与稳定容量都按液态参照体积计算。
         MeridianDefinition definition = body.getStructure().getMeridiansList().stream()
                 .filter(item -> item.getId().equals(target)).findFirst().orElseThrow();
         MeridianState state = body.getMeridianStatesList().stream().filter(item -> item.getId().equals(target)).findFirst().orElseThrow();
         boolean opened = state.getOpening().getStage() == MeridianOpeningStage.OPENED;
         boolean intact = state.getCondition() == MeridianCondition.INTACT;
-        double fullness = QiDisplay.ratio(QiDisplay.amount(state.getLumenQi()), definition.getLumenCapacity());
+        double fullness = QiDisplay.ratio(QiDisplay.volume(state.getLumenQi()), definition.getLumenVolume());
         return MeridianOperationView.newBuilder().setTitle(definition.getDisplayName())
                 .setStatus(opened ? "已拓宽" : "尚未拓宽")
                 .addMeters(meter("storage", "内腔储量", fullness, fullness >= 1 ? METER_READY : METER_WAITING,
                         "实线为已到账，淡色段为正在送来的真元").toBuilder()
-                        .setIncomingFraction(QiDisplay.ratio(QiDisplay.incoming(body, target), definition.getLumenCapacity())))
+                        .setIncomingFraction(QiDisplay.ratio(QiDisplay.incoming(body, target), definition.getLumenVolume())))
                 .addMeters(meter("condition", "通路完好", intact ? 1 : 0,
                         intact ? METER_READY : METER_BLOCKED, intact ? "通路可用" : "先恢复受损经脉"))
                 .addMeters(meter("opening", "拓宽进度", opened ? 1 : state.getOpening().getProgress(),

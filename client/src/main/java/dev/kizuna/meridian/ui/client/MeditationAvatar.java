@@ -6,11 +6,12 @@ import dev.kizuna.playeranimation.client.PlayerAssets;
 import dev.kizuna.playeranimation.model.BoneId;
 import dev.kizuna.playeranimation.model.Rig;
 import dev.kizuna.playeranimation.model.SkinnedMesh;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.BufferBuilder;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
-/** 可选动画模组的只读预览适配；独立播放器不会改变外世界玩家或触发玩法事件。 */
+/** 必装动画模组的只读预览，独立播放器不触发外世界玩法事件。 */
 final class MeditationAvatar {
     private final PlayerAssets.Model model;
     private final AnimationPlayer player = new AnimationPlayer();
@@ -36,10 +37,12 @@ final class MeditationAvatar {
     }
 
     static MeditationAvatar create(String animation) {
-        // 资源可能正在重载或没有指定动作；调用方保留可用的静态内容模型。
-        PlayerAssets.Model model = PlayerAnimationClient.ASSETS.model(false);
+        // 吐纳要求真实骨架和指定动作，缺资源时直接暴露装配错误。
+        var viewer = MinecraftClient.getInstance().player;
+        boolean slim = viewer != null && "slim".equals(viewer.getModel());
+        PlayerAssets.Model model = PlayerAnimationClient.ASSETS.model(slim);
         if (model == null || !PlayerAnimationClient.ASSETS.animations().containsKey(animation)) {
-            return null;
+            throw UiErrors.invalid(UiErrors.MISSING_MEDITATION_ASSETS + animation);
         }
         return new MeditationAvatar(model, animation);
     }

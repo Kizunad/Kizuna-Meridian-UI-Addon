@@ -5,11 +5,13 @@ import com.mojang.blaze3d.systems.VertexSorter;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
 import dev.kizuna.inventoryui.client.component.ModelPreviewCamera;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
+import dev.kizuna.meridian.ui.api.MeridianRouteProvider;
 import io.wispforest.owo.ui.base.BaseComponent;
 import io.wispforest.owo.ui.core.OwoUIDrawContext;
 import io.wispforest.owo.ui.core.Sizing;
 import net.minecraft.client.render.*;
 import net.minecraft.client.MinecraftClient;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gl.SimpleFramebuffer;
 import io.wispforest.owo.ui.util.ScissorStack;
 import net.minecraft.util.math.Box;
@@ -43,15 +45,34 @@ public final class BodyCanvas extends BaseComponent {
     private double draggedPixels;
     private boolean dragging;
     private MeridianFlow flow;
+    private final OpeningOverlay openingOverlay;
     private final Map<String, Double> openingProgress = new HashMap<>();
     private final Map<String, Double> storedFraction = new HashMap<>();
     private final Map<String, Float> shownBrightness = new HashMap<>();
     private SimpleFramebuffer openingFramebuffer;
+    private List<Marker> markers = List.of();
+    private int transitColor = 0xFFFFE48A;
+
+    /** 模型空间实线圆环；半径和线宽均为屏幕像素，生物附属决定颜色含义。 */
+    public record Marker(float x, float y, float z, float radiusPixels, float thicknessPixels, int color) { }
+
+    public void effects(List<Marker> markers, int color) {
+        // 生物附属提供模型空间标记，通用画布只负责投影，不解释人体关口。
+        this.markers = List.copyOf(markers);
+        transitColor = color;
+    }
+    private Runnable disposal = () -> { /* 普通检视没有额外活动会话。 */ };
+
+    public void onDispose(Runnable action) {
+        // 附属释放自己的输入状态；画布关闭后不能留下按住的推力。
+        disposal = java.util.Objects.requireNonNull(action);
+    }
 
     public BodyCanvas(BodyScene scene, Consumer<BodyVisual> selection, Runnable showOverview) {
         // 包围盒由生物提供；旋转、缩放和聚焦均使用同一个模型坐标系。
         this.selection = selection;
         this.showOverview = showOverview;
+        openingOverlay = new OpeningOverlay(scene);
         ModelPoint minimum = scene.presentation().getMinimum();
         ModelPoint maximum = scene.presentation().getMaximum();
         bounds = new Box(minimum.getX(), minimum.getY(), minimum.getZ(), maximum.getX(), maximum.getY(), maximum.getZ());
@@ -62,6 +83,7 @@ public final class BodyCanvas extends BaseComponent {
 
     public void dispose() {
         // 只有实际看过的对象持有 GPU 缓冲，窗口关闭时统一释放。
+        disposal.run();
         meshes.values().forEach(BodyMesh::close);
         meshes.clear();
         if (openingFramebuffer != null) {
@@ -72,8 +94,15 @@ public final class BodyCanvas extends BaseComponent {
 
     public void opening(BodyScene scene, BodySnapshot body) {
         // 经脉窗口复用站姿几何；颜色只读取服务端开拓进度，不按本地时间判成功。
+        openingOverlay.update(body);
         if (flow == null) {
-            flow = new MeridianFlow(scene);
+            // 路线是必需接线；装配错误直接拒绝，避免静默画出另一套人体流向。
+            List<MeridianRouteProvider> providers = FabricLoader.getInstance()
+                    .getEntrypoints(MeridianRouteProvider.ENTRYPOINT, MeridianRouteProvider.class);
+            if (providers.size() != 1) {
+                throw UiErrors.invalid(UiErrors.REQUIRED_ROUTE_PROVIDER);
+            }
+            flow = new MeridianFlow(scene, providers.get(0));
         }
         openingProgress.clear();
         storedFraction.clear();
@@ -84,11 +113,16 @@ public final class BodyCanvas extends BaseComponent {
             }
             openingProgress.put(state.getId(), progress);
             double capacity = body.getStructure().getMeridiansList().stream()
-                    .filter(item -> item.getId().equals(state.getId())).mapToDouble(MeridianDefinition::getLumenCapacity)
+                    .filter(item -> item.getId().equals(state.getId())).mapToDouble(MeridianDefinition::getLumenVolume)
                     .findFirst().orElse(0);
-            storedFraction.put(state.getId(), QiDisplay.ratio(QiDisplay.amount(state.getLumenQi()), capacity));
+            storedFraction.put(state.getId(), QiDisplay.storageFraction(state.getLumenQi(), capacity));
         }
         flow.update(body);
+    }
+
+    public void bodyEffects(BodySnapshot body) {
+        // 普通检视仅刷新叠层状态，不切换为黑色经脉场景或改变玩家皮肤。
+        openingOverlay.update(body);
     }
 
     public void highlight(BodyVisual node) {
@@ -211,11 +245,20 @@ public final class BodyCanvas extends BaseComponent {
                 }
                 // 相机矩阵直接交给 GPU，静态顶点不再逐帧复制或创建转换向量。
                 BodyMesh mesh = meshes.computeIfAbsent(node.getId(), id -> new BodyMesh(node, true));
+                if (node.getTargetKind() == BodyTargetKind.MERIDIAN) {
+                    color = openingOverlay.meshColor(node.getTargetId(), color, now);
+                    float baseline = emphasis * openingOverlay.restingBrightness(node.getTargetId());
+                    emphasis = openingOverlay.meshBrightness(node.getTargetId(), baseline, now);
+                }
                 mesh.draw(matrix, color, emphasis, 255);
             }
+            var meridianIds = visible.stream().filter(node -> node.getTargetKind() == BodyTargetKind.MERIDIAN)
+                    .map(BodyVisual::getTargetId).collect(java.util.stream.Collectors.toSet());
+            openingOverlay.draw(matrix, null, meridianIds, now, .8f, false);
         } finally {
             // 画布退出后恢复 UI 所需渲染状态，避免影响旁边的文字和窗口。
             RenderSystem.enableCull();
+            RenderSystem.depthMask(true);
             RenderSystem.disableDepthTest();
             context.disableScissor();
         }
@@ -281,29 +324,70 @@ public final class BodyCanvas extends BaseComponent {
                     continue;
                 }
                 // 储量产生很弱的底光，开拓仍决定主要亮度，未开满储量不会冒充已拓宽。
-                float desired = (float) (.18 + .55 * openingProgress.getOrDefault(node.getTargetId(), 0.0)
-                        + .07 * storedFraction.getOrDefault(node.getTargetId(), 0.0));
+                float desired = (float) (.18 + .07 * storedFraction.getOrDefault(node.getTargetId(), 0.0));
+                if (openingProgress.getOrDefault(node.getTargetId(), 0.0) >= 1) {
+                    desired += .55f;
+                }
                 float shown = shownBrightness.getOrDefault(node.getId(), desired);
                 shown += (desired - shown) * brightnessBlend;
                 shownBrightness.put(node.getId(), shown);
                 if (node.getId().equals(selectedId)) {
                     shown = Math.min(1, shown + .15f);
                 }
-                meshes.computeIfAbsent(node.getId(), id -> new BodyMesh(node, false)).draw(matrix, 0xF4DC82, shown, 230);
+                shown = openingOverlay.meshBrightness(node.getTargetId(), shown, now);
+                int color = openingOverlay.meshColor(node.getTargetId(), 0xF4DC82, now);
+                meshes.computeIfAbsent(node.getId(), id -> new BodyMesh(node, false)).draw(matrix, color, shown, 230);
             }
-            // 每个在途只呈现一段短光尾；屏幕朝向的微粒仍沿三维经脉轨迹运动。
+            var meridianIds = visible.stream().filter(node -> node.getTargetKind() == BodyTargetKind.MERIDIAN)
+                    .map(BodyVisual::getTargetId).collect(java.util.stream.Collectors.toSet());
+            int openingParticles = openingOverlay.draw(matrix, null, meridianIds, now, .85f, false);
+            int remainingParticles = EffectSettings.particleLimit() - openingParticles;
+            // 各类装饰共用画布上限，减少动态时撤掉流动光尾，保留静态路线与关口。
             RenderSystem.setShader(GameRenderer::getPositionColorProgram);
             BufferBuilder buffer = Tessellator.getInstance().getBuffer();
             buffer.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
             for (MeridianFlow.Flight flight : flow.flights()) {
+                if (EffectSettings.reducedMotion() || remainingParticles <= 0) {
+                    break;
+                }
                 for (int tail = 3; tail >= 0; tail--) {
+                    if (remainingParticles-- <= 0) {
+                        break;
+                    }
                     Vector3f point = matrix.transformPosition(flight.point(now, tail * .025));
                     float radius = tail == 0 ? 1.5f : .9f;
                     int alpha = 220 - tail * 48;
-                    buffer.vertex(point.x - radius, point.y - radius, 0).color(255, 228, 138, alpha).next();
-                    buffer.vertex(point.x + radius, point.y - radius, 0).color(255, 228, 138, alpha).next();
-                    buffer.vertex(point.x + radius, point.y + radius, 0).color(255, 228, 138, alpha).next();
-                    buffer.vertex(point.x - radius, point.y + radius, 0).color(255, 228, 138, alpha).next();
+                    int red = (transitColor >> 16) & 255;
+                    int green = (transitColor >> 8) & 255;
+                    int blue = transitColor & 255;
+                    buffer.vertex(point.x - radius, point.y - radius, 0).color(red, green, blue, alpha).next();
+                    buffer.vertex(point.x + radius, point.y - radius, 0).color(red, green, blue, alpha).next();
+                    buffer.vertex(point.x + radius, point.y + radius, 0).color(red, green, blue, alpha).next();
+                    buffer.vertex(point.x - radius, point.y + radius, 0).color(red, green, blue, alpha).next();
+                }
+            }
+            for (Marker marker : markers) {
+                // 环形标记与模型进入同一帧缓冲，不会盖住窗口文字或脱离旋转后的模型。
+                // 以内外半径拼出连续实线环，点状环在小窗口里难以分辨颜色。
+                Vector3f center = matrix.transformPosition(new Vector3f(marker.x(), marker.y(), marker.z()));
+                float inner = Math.max(0, marker.radiusPixels() - marker.thicknessPixels() / 2);
+                float outer = marker.radiusPixels() + marker.thicknessPixels() / 2;
+                int color = marker.color();
+                int red = color >> 16 & 255;
+                int green = color >> 8 & 255;
+                int blue = color & 255;
+                int alpha = color >>> 24;
+                for (int step = 0; step < 48; step++) {
+                    double from = step * Math.PI * 2 / 48;
+                    double to = (step + 1) * Math.PI * 2 / 48;
+                    float fromCos = (float) Math.cos(from);
+                    float fromSin = (float) Math.sin(from);
+                    float toCos = (float) Math.cos(to);
+                    float toSin = (float) Math.sin(to);
+                    buffer.vertex(center.x + fromCos * inner, center.y + fromSin * inner, 0).color(red, green, blue, alpha).next();
+                    buffer.vertex(center.x + fromCos * outer, center.y + fromSin * outer, 0).color(red, green, blue, alpha).next();
+                    buffer.vertex(center.x + toCos * outer, center.y + toSin * outer, 0).color(red, green, blue, alpha).next();
+                    buffer.vertex(center.x + toCos * inner, center.y + toSin * inner, 0).color(red, green, blue, alpha).next();
                 }
             }
             BufferRenderer.drawWithGlobalProgram(buffer.end());

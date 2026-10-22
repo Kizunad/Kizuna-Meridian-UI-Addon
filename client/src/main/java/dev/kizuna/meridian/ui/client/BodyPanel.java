@@ -3,6 +3,7 @@ package dev.kizuna.meridian.ui.client;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
 import dev.kizuna.inventoryui.client.component.ResponsiveLayout;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
+import dev.kizuna.meridian.progression.client.ClientProgression;
 import io.wispforest.owo.ui.component.LabelComponent;
 import io.wispforest.owo.ui.container.FlowLayout;
 import io.wispforest.owo.ui.parsing.UIModelLoader;
@@ -46,6 +47,7 @@ public final class BodyPanel {
                 .expandTemplate(FlowLayout.class, "body-panel", Map.of());
         information = content.childById(LabelComponent.class, "information");
         canvas = new BodyCanvas(scene, this::select, this::overview);
+        canvas.bodyEffects(body);
         content.childById(FlowLayout.class, "canvas").child(canvas);
         FlowLayout layers = content.childById(FlowLayout.class, "layers");
         for (PresentationLayer layer : scene.presentation().getLayersList()) {
@@ -120,6 +122,9 @@ public final class BodyPanel {
 
     public void layer(String id) {
         // 宿主可以指定单层初始视图；玩家的勾选操作使用独立增删入口。
+        if (!id.equals(scene.defaultLayerId()) && !ClientProgression.canCultivate()) {
+            return;
+        }
         visibleLayers.clear();
         visibleLayers.add(id);
         refreshObjects();
@@ -128,6 +133,9 @@ public final class BodyPanel {
 
     public void setLayerVisible(String id, boolean enabled) {
         // 勾选只影响渲染集合；相机、各层坐标和其他开关不会随之改变。
+        if (enabled && !id.equals(scene.defaultLayerId()) && !ClientProgression.canCultivate()) {
+            return;
+        }
         if (scene.presentation().getLayersList().stream().noneMatch(layer -> layer.getId().equals(id))) {
             return;
         }
@@ -185,6 +193,8 @@ public final class BodyPanel {
     }
 
     public void update(BodySnapshot snapshot) {
+        // 开脉叠层共用权威状态，是否显示仍由玩家的经脉层勾选决定。
+        canvas.bodyEffects(snapshot);
         // 同一身体按版本递增替换显示；结构或境界变化都可能改变可选节点。
         scene.requireTemplate(snapshot);
         if (!body.getId().equals(snapshot.getId()) || snapshot.getRevision() < body.getRevision()) {

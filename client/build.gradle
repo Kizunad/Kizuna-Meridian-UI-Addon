@@ -7,8 +7,7 @@ description = '通用身体模型、分层选择与状态展示。'
 def inventoryDirectory = rootProject.file(providers.gradleProperty('inventoryUiFrameworkDir')
         .getOrElse('../Kizuna-Inventory-UI-Framework'))
 def inventoryJar = new File(inventoryDirectory, 'build/libs/kizuna-inventory-ui-framework-0.1.0-SNAPSHOT.jar')
-def animationDirectory = rootProject.file(providers.gradleProperty('playerAnimationDir')
-        .getOrElse('../Kizuna-Players-Animation'))
+def animationDirectory = rootProject.file('../Kizuna-Players-Animation')
 def animationJar = new File(animationDirectory, 'build/libs/kizuna-players-animation-0.1.0-SNAPSHOT.jar')
 if (!inventoryJar.isFile()) {
     throw new GradleException('请先在 Inventory UI Framework 仓库运行 ./gradlew build，生成可重映射的客户端 JAR。')
@@ -24,8 +23,10 @@ dependencies {
     modImplementation 'io.wispforest:owo-lib:0.11.2+1.20'
     // Loom 将已构建框架映射到开发命名；不把框架内嵌进 UI 附属。
     modImplementation files(inventoryJar)
-    // 仅编译可选渲染适配器；未安装动画模组时走内容模型，不改变双框架必需依赖。
-    modCompileOnly files(animationJar)
+    // 预览直接使用必装动画模组的公开 API。
+    modImplementation files(animationJar)
+    modImplementation files('../../Kizuna-Meridian-Progression-Addon/client/build/libs/kizuna-meridian-progression-addon-client-0.1.0-SNAPSHOT.jar')
+    implementation files('../../Kizuna-Meridian-Progression-Addon/shared/build/libs/kizuna-meridian-progression-addon-shared-0.1.0-SNAPSHOT.jar')
     testImplementation 'junit:junit:4.13.2'
 }
 
@@ -35,36 +36,10 @@ processResources {
     filesMatching('fabric.mod.json') { expand version: project.version }
 }
 
-if (providers.gradleProperty('humanAddonDir').isPresent()) {
-    sourceSets {
-        demo {
-            compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
-            runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
-        }
-    }
-    dependencies {
-        demoImplementation 'local.meridian-human:client'
-        demoImplementation 'local.meridian-human:server'
-        demoImplementation project(':server')
-        modRuntimeOnly files(animationJar)
-    }
-    loom {
-        mods {
-            'meridian_ui' { sourceSet sourceSets.main }
-            'meridian_ui_demo' { sourceSet sourceSets.demo }
-        }
-        runs {
-            demo {
-                client()
-                source sourceSets.demo
-                runDir 'build/demo'
-                property 'kiui.smoke', 'true'
-                property 'meridian.ui.smoke', providers.gradleProperty('uiSmoke').getOrElse('false')
-                property 'meridian.ui.gatheringSmoke', providers.gradleProperty('gatheringSmoke').getOrElse('false')
-                property 'meridian.ui.responsiveSmoke', providers.gradleProperty('responsiveSmoke').getOrElse('false')
-                property 'meridian.ui.openingSmoke', providers.gradleProperty('openingSmoke').getOrElse('false')
-                programArgs '--width', '1440', '--height', '1000'
-            }
-        }
+// 开发运行固定使用完整装配；游戏内整体验收在 Human-UI 的整合服 smoke 中执行。
+apply from: '../../Kizuna-Meridian-Mod-Framework/scripts/full-assembly.gradle'
+loom {
+    mods {
+        'meridian_ui' { sourceSet sourceSets.main }
     }
 }

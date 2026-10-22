@@ -23,7 +23,7 @@ final class BreathingMeters {
     private static final Identifier AIR = new Identifier("meridian_ui", "textures/gui/lungs_air.png");
     private static final int AIR_TOP = 20;
     private static final int AIR_BOTTOM = 54;
-    private static final int COMPACT_WIDTH = 420;
+    static final int COMPACT_WIDTH = 420;
     private final AirGauge air = new AirGauge();
     private final ReserveGauge reserve = new ReserveGauge();
     private final QiSummary qi = new QiSummary();
@@ -74,7 +74,8 @@ final class BreathingMeters {
         breath = view.getBreathing();
         air.tooltip(List.of(Text.literal(String.format(Locale.ROOT, "空气 %.1f / %.1f L",
                 breath.getAirLiters(), breath.getCapacityLiters()))));
-        double remainingRatio = Math.min(breath.getStaminaRatio(), breath.getAttentionRatio());
+        double remainingRatio = breath.getAutomatic() ? breath.getStaminaRatio()
+                : Math.min(breath.getStaminaRatio(), breath.getAttentionRatio());
         reserve.tooltip(List.of(
                 Text.literal(String.format(Locale.ROOT, "维持 %.0f%%", remainingRatio * 100)),
                 Text.literal(String.format(Locale.ROOT, "横膈肌耐力 %.0f%%", breath.getStaminaRatio() * 100)),
@@ -84,8 +85,8 @@ final class BreathingMeters {
         BodySnapshot body = view.getBody();
         double totalQi = QiDisplay.total(body);
         double maximumQi = body.getStructure().getMeridiansList().stream()
-                .mapToDouble(meridian -> meridian.getLumenCapacity() + meridian.getWallCapacity()).sum();
-        maximumQi += body.getStructure().getOrgansList().stream().mapToDouble(OrganDefinition::getQiCapacity).sum();
+                .mapToDouble(meridian -> meridian.getLumenVolume() + meridian.getWallVolume()).sum();
+        maximumQi += body.getStructure().getOrgansList().stream().mapToDouble(OrganDefinition::getVolumeCapacity).sum();
         // 将尚未入脉的实际缓存和器官出口在途单独列出，方便区分捕获成功与配送等待。
         double bufferedQi = body.getOrganStatesList().stream()
                 .filter(organ -> breath.getOrganIdsList().contains(organ.getId()))
@@ -167,11 +168,23 @@ final class BreathingMeters {
         @Override
         public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
             // 总余力取先耗尽的一项，避免另一项仍高时掩盖实际限制。
-            double remainingRatio = Math.min(breath.getStaminaRatio(), breath.getAttentionRatio());
-            context.drawText(MinecraftClient.getInstance().textRenderer, "余力", x, y, 0xFFD5B878, false);
+            double remainingRatio = breath.getAutomatic() ? breath.getStaminaRatio()
+                    : Math.min(breath.getStaminaRatio(), breath.getAttentionRatio());
+            var font = MinecraftClient.getInstance().textRenderer;
+            // 自动吐纳只看呼吸耐力，标题直接写明，并画出服务端停止线。
+            String label = breath.getAutomatic()
+                    ? String.format(Locale.ROOT, "呼吸耐力 %.0f%%（不耗精力）", breath.getStaminaRatio() * 100) : "余力";
+            context.drawText(font, font.trimToWidth(label, width), x, y, 0xFFD5B878, false);
             context.fill(x, y + 16, x + width, y + 20, 0xFF272A26);
             int fillWidth = (int) Math.round(width * Math.max(0, Math.min(1, remainingRatio)));
             context.fill(x, y + 16, x + fillWidth, y + 20, 0xFFD5B878);
+            if (breath.getAutomatic()) {
+                int stopX = x + (int) Math.round(width * breath.getAutomaticMinimumStaminaRatio());
+                context.fill(stopX, y + 13, stopX + 1, y + 23, 0xFFFF5858);
+                String stop = String.format(Locale.ROOT, "低于%.0f%%自动停", breath.getAutomaticMinimumStaminaRatio() * 100);
+                context.drawText(font, stop, Math.min(x + width - font.getWidth(stop), stopX - font.getWidth(stop) / 2),
+                        y, 0xFFFF8A80, false);
+            }
         }
     }
 

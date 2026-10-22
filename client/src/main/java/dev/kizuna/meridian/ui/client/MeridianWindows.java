@@ -5,6 +5,7 @@ import dev.kizuna.inventoryui.client.ClientRuntime;
 import dev.kizuna.inventoryui.protocol.UiMessageRouter;
 import dev.kizuna.inventoryui.protocol.UiWire;
 import dev.kizuna.inventoryui.window.UiWindowManager.WindowKey;
+import dev.kizuna.meridian.progression.client.ClientProgression;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
 import dev.kizuna.meridian.protocol.pb.OpeningMessages.*;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.ResponseEnvelope;
@@ -32,6 +33,9 @@ final class MeridianWindows {
     private Consumer<MeridianOpeningRequest> sender;
     private ClientRuntime runtime;
     private MeridianPanel panel;
+    private MeridianPanel practice;
+    private WindowKey practiceKey;
+    private boolean practiceLocked;
     private OpeningPanel operation;
     private WindowKey panelKey;
     private WindowKey operationKey;
@@ -84,6 +88,42 @@ final class MeridianWindows {
 
     void register(ClientBindings bindings) {
         // Fabric 与 Inventory 公共路由复用同一 Protobuf 意图，UI 不接触身体 Store。
+        bindings.window("meridian_ui:practice_window", (owner, window) -> {
+            // 生物附属决定练习权限和提示，通用窗口负责快照与释放。
+            ClientProgression.requireCultivation();
+            runtime = owner;
+            var extension = dev.kizuna.meridian.ui.api.MeridianSceneExtension.required();
+            WindowKey openedKey = window.key();
+            if (!extension.lockedReason().isEmpty()) {
+                // 入口仍在修炼页，但弹窗只显示锁和找卷提示；记下锁定态，读完后关闭以便重开出真实控件。
+                practiceKey = openedKey;
+                practiceLocked = true;
+                window.scope().addCleanup(() -> {
+                    if (practiceKey == openedKey) {
+                        practiceKey = null;
+                    }
+                });
+                return new LockedNotice(extension.title(), extension.lockedReason());
+            }
+            if (scene == null || body == null) {
+                return Components.label(Text.literal(UiErrors.MISSING_BODY));
+            }
+            practice = new MeridianPanel(scene, body, selected -> {}, () -> {}, true);
+            practiceKey = openedKey;
+            practiceLocked = false;
+            MeridianPanel opened = practice;
+            window.scope().addCleanup(() -> {
+                // 关闭练习必须先通知停止并释放场景，不影响另一个经脉窗口的选择。
+                opened.canvas().dispose();
+                if (practice == opened) {
+                    practice = null;
+                }
+                if (practiceKey == openedKey) {
+                    practiceKey = null;
+                }
+            });
+            return opened.root();
+        });
         ClientPlayNetworking.registerGlobalReceiver(RESPONSE, (client, handler, buffer, responseSender) -> {
             if (buffer.readableBytes() == 0 || buffer.readableBytes() > 1024 * 1024) {
                 return;
@@ -110,6 +150,7 @@ final class MeridianWindows {
                 ResponseEnvelope.class, this::receive), UiWire.Codec.protobuf(ResponseEnvelope.getDefaultInstance()), false));
         bindings.window("meridian_ui:meridian_window", (owner, window) -> {
             // 主窗口展示站姿和经脉，选中目标后直接由画布接收操作快捷键。
+            ClientProgression.requireCultivation();
             runtime = owner;
             if (scene == null || body == null) {
                 return Components.label(Text.literal(UiErrors.MISSING_BODY));
@@ -130,6 +171,7 @@ final class MeridianWindows {
         });
         bindings.window("meridian_ui:meridian_operation_window", (owner, window) -> {
             // 操作入口绑定当前选择，请求中始终使用最新权威 revision。
+            ClientProgression.requireCultivation();
             runtime = owner;
             operationKey = window.key();
             operation = new OpeningPanel(this::caption, this::canOperate, this::operate,
@@ -162,6 +204,9 @@ final class MeridianWindows {
         if (panel != null) {
             panel.update(body);
         }
+        if (practice != null) {
+            practice.update(body);
+        }
         if (selected != null && (!BodyScene.exists(body, selected) || !BodyScene.realmAllows(body, selected))) {
             closeDetails();
         }
@@ -183,26 +228,15 @@ final class MeridianWindows {
     }
 
     void protocolReady(ClientRuntime runtime) {
-        // Fabric 有能力时优先使用宿主通道，否则由公共路由协商是否支持。
+        // 生产连接固定使用必装宿主；本地样例通过 bind 显式提供发送器。
         this.runtime = runtime;
-        if (bindFabric()) {
-            return;
-        }
-        sender = request -> runtime.protocol().request("meridian_ui:opening_request", request,
-                System.currentTimeMillis()).thenAccept(outcome -> MinecraftClient.getInstance().execute(() -> {
-                    // 路由拒绝只解除当前请求的背压，不自动重复开脉。
-                    if (!outcome.accepted() && pending.equals(request.getRequestId())) {
-                        pending = "";
-                        error = UiErrors.OPENING_UNAVAILABLE;
-                        show();
-                    }
-                }));
+        bindFabric();
     }
 
-    private boolean bindFabric() {
-        // 服务器声明接收通道才允许发送，普通只读宿主不显示为可操作。
+    private void bindFabric() {
+        // 缺少声明是整套装配错误，不自动切换另一条请求路径。
         if (!ClientPlayNetworking.canSend(REQUEST)) {
-            return false;
+            throw new IllegalStateException(UiErrors.REQUIRED_HOST_CHANNEL + REQUEST);
         }
         sender = request -> {
             // 仅传意图与快照版本；时间、身份与资源均由服务器独立判定。
@@ -210,7 +244,6 @@ final class MeridianWindows {
             buffer.writeBytes(request.toByteArray());
             ClientPlayNetworking.send(REQUEST, buffer);
         };
-        return true;
     }
 
     private void select(BodyVisual node) {
@@ -253,6 +286,9 @@ final class MeridianWindows {
 
     private boolean canOperate() {
         // 客户端可用性仅防止明显重复，最低储量和所有资源仍由宿主校验。
+        if (!ClientProgression.canCultivate()) {
+            return false;
+        }
         if (body == null || selected == null || !pending.isEmpty() || body.getVitality().getDead()) {
             return false;
         }
@@ -328,7 +364,7 @@ final class MeridianWindows {
     }
 
     private MeridianOperationView chosen() {
-        // 快照刷新保留选择；所选附属卸载后回落到仍存在的入口。
+        // 快照刷新保留选择；操作目录变化后选中仍可用的入口。
         List<MeridianOperationView> choices = choices();
         MeridianOperationView view = choices.stream()
                 .filter(item -> item.getId().equals(chosenOperation)).findFirst().orElse(null);
@@ -387,12 +423,17 @@ final class MeridianWindows {
 
     boolean open() {
         // 身体替换前需要检查所有经脉窗口。
-        return panel != null || operation != null;
+        return panel != null || operation != null || practice != null;
     }
 
     MeridianPanel panel() {
         // 演示验收使用同一个生产场景进行真实点击。
         return panel;
+    }
+
+    MeridianPanel practicePanel() {
+        // 专属练习拥有独立窗口，宿主检查布局时不能误取普通经脉窗口。
+        return practice;
     }
 
     io.wispforest.owo.ui.core.Component operationRoot() {
@@ -402,6 +443,9 @@ final class MeridianWindows {
 
     void clear() {
         // 断线释放显示能力与旧意图，不能将前一个服务器的规则带入新连接。
+        if (runtime != null && practiceKey != null) {
+            runtime.workspace().windows().close(practiceKey);
+        }
         closeDetails();
         if (runtime != null && panelKey != null) {
             runtime.workspace().windows().close(panelKey);
@@ -416,5 +460,34 @@ final class MeridianWindows {
         registerOpening();
         chosenOperation = "";
         pendingOperation = "";
+    }
+
+    void revoke() {
+        // 撤销修炼页时专属弹窗同样停止，不能保留独立活动。
+        if (runtime != null && practiceKey != null) {
+            runtime.workspace().windows().close(practiceKey);
+        }
+        // 重置只撤销当前修炼窗口和待处理意图，基础身体检视仍可保留。
+        closeDetails();
+        if (runtime != null && panelKey != null) {
+            runtime.workspace().windows().close(panelKey);
+        }
+        pending = "";
+        pendingOperation = "";
+        chosenOperation = "";
+        rules = List.of();
+        operations.clear();
+        registerOpening();
+    }
+
+    void progressChanged() {
+        // 细分残卷撤权不等同于隐藏整个修炼页；锁定态一变就关闭练习窗，撤权停止活动，解锁后重开即得真实控件。
+        if (runtime == null || practiceKey == null) {
+            return;
+        }
+        boolean locked = !dev.kizuna.meridian.ui.api.MeridianSceneExtension.required().lockedReason().isEmpty();
+        if (locked != practiceLocked) {
+            runtime.workspace().windows().close(practiceKey);
+        }
     }
 }

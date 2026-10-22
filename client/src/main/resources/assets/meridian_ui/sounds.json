@@ -1,4 +1,6 @@
 {
+  "opening.complete": { "sounds": ["meridian_ui:opening/complete"] },
+  "opening.interrupted": { "sounds": ["meridian_ui:opening/interrupted"] },
   "breathing.inhale": {
     "sounds": ["meridian_ui:breathing/inhale"]
   },

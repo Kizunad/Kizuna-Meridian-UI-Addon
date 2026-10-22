@@ -20,8 +20,14 @@ public final class MeridianPanel {
     private final FlowLayout root;
     private final BodyCanvas canvas;
     private final Consumer<BodyVisual> selection;
+    private final dev.kizuna.meridian.ui.api.MeridianSceneExtension.Session extension;
 
     MeridianPanel(BodyScene scene, BodySnapshot body, Consumer<BodyVisual> selection, Runnable operate) {
+        // 普通经脉窗口只处理选脉和开脉，专属练习使用独立窗口。
+        this(scene, body, selection, operate, false);
+    }
+
+    MeridianPanel(BodyScene scene, BodySnapshot body, Consumer<BodyVisual> selection, Runnable operate, boolean practice) {
         // 使用生物包的表层和经脉模型，保持站姿，不借用吐纳盘坐动画。
         this.scene = scene;
         this.selection = selection;
@@ -32,8 +38,19 @@ public final class MeridianPanel {
             // 中键只重置镜头和当前高亮，不改变身体状态。
             canvas().overview();
         });
+        var provider = dev.kizuna.meridian.ui.api.MeridianSceneExtension.required();
+        extension = practice ? provider.create(scene, canvas) : null;
+        if (practice) {
+            content.childById(io.wispforest.owo.ui.component.LabelComponent.class, "title")
+                    .text(net.minecraft.text.Text.literal(provider.title()));
+            content.child(extension.component());
+            canvas.onDispose(extension::close);
+        }
         canvas.keyPress().subscribe((key, scan, modifiers) -> {
             // 凝聚和暂停共用权威操作入口，按键不在客户端变更资源。
+            if (extension != null && extension.keyPress(key, modifiers)) {
+                return true;
+            }
             if (key == GLFW.GLFW_KEY_G && modifiers == 0) {
                 operate.run();
                 return true;
@@ -50,6 +67,10 @@ public final class MeridianPanel {
         place(content.childById(Component.class, "title"), 8, 6, width - 44, 18);
         place(content.childById(Component.class, "info"), width - 28, 4, 18, 18);
         place(content.childById(Component.class, "scene"), 6, 30, width - 12, height - 36);
+        if (extension != null) {
+            // 练习控件留出三行说明和右侧关口盘的高度，模型上半身仍保持可见。
+            place(extension.component(), 14, height - 156, width - 28, 144);
+        }
     }
 
     static void place(Component component, int x, int y, int width, int height) {
@@ -70,6 +91,9 @@ public final class MeridianPanel {
                 .filter(node -> BodyScene.realmAllows(body, node))
                 .filter(node -> BodyScene.exists(body, node)).toList());
         canvas.opening(scene, body);
+        if (extension != null) {
+            extension.update(body);
+        }
     }
 
     private void clicked(BodyVisual node) {

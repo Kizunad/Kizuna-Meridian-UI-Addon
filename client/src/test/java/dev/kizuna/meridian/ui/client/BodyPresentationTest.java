@@ -5,21 +5,94 @@ import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
 import dev.kizuna.meridian.protocol.pb.OperationUiMessages.*;
 import org.junit.Test;
 import static org.junit.Assert.*;
+import dev.kizuna.meridian.ui.api.MeridianRouteProvider;
+import dev.kizuna.meridian.ui.api.MeridianRouteProvider.Point;
+import java.util.List;
 
 /** 整体保护：资源边界与非人体内容映射，防止 UI 偷偷依赖人体命名。 */
 public class BodyPresentationTest {
     @Test
+    public void transportUsesContentWaypointsOnlyForRealVisibleConnections() {
+        // 用非人体器官验证交汇路径，避免 UI 依赖人中坐标或人体经脉名称。
+        BodyPresentation.Builder model = presentation().toBuilder();
+        model.addVisuals(model.getVisuals(0).toBuilder().setId("receiver").setTargetId("receiver"));
+        List<Point> path = List.of(new Point(-.5f, 0, 0), new Point(0, 1, 0), new Point(.5f, 0, 0));
+        MeridianRouteProvider provider = (presentation, structure, connection) -> path;
+        BodySnapshot body = BodySnapshot.newBuilder().setRealm(Realm.WANDERING_QI)
+                .setStructure(BodyStructure.newBuilder()
+                        .addOrgans(OrganDefinition.newBuilder().setId("crystal").addPorts(Port.newBuilder().setId("out")))
+                        .addOrgans(OrganDefinition.newBuilder().setId("receiver").addPorts(Port.newBuilder().setId("in")))
+                        .addConnections(Connection.newBuilder().setId("route").setFrom("out").setTo("in")))
+                .addTransits(QiTransit.newBuilder().setId("cargo").setConnectionId("route")
+                        .setStatus(TransitStatus.MOVING).setArrivalMillis(1000)
+                        .setCargo(QiInventory.newBuilder().addEntries(Qi.newBuilder().setAmount(.1).setDensity(.01))))
+                .build();
+        BodyScene scene = new BodyScene(model.build().toByteArray());
+        MeridianFlow flow = new MeridianFlow(scene, provider);
+        flow.update(body);
+        assertEquals(1, flow.flights().size());
+        assertTrue(maximumHeight(flow) > .99f);
+
+        // 不存在的连接不能凭表现路线产生光迹。
+        flow.update(body.toBuilder().setStructure(body.getStructure().toBuilder().clearConnections()).build());
+        assertTrue(flow.flights().isEmpty());
+
+        // 路线结果在渲染前校验，避免无效坐标进入 GPU。
+        for (List<Point> invalid : List.of(List.of(new Point(0, 0, 0)),
+                List.of(new Point(0, 2, 0), new Point(0, 0, 0)),
+                List.of(new Point(Float.NaN, 0, 0), new Point(0, 0, 0)))) {
+            MeridianRouteProvider broken = (presentation, structure, connection) -> invalid;
+            assertThrows(IllegalArgumentException.class, () -> new MeridianFlow(scene, broken).update(body));
+        }
+        MeridianRouteProvider broken = (presentation, structure, connection) -> null;
+        assertThrows(IllegalArgumentException.class, () -> new MeridianFlow(scene, broken).update(body));
+
+        // 权威连接存在但端点模型缺失属于内容接线错误，不能静默省略光迹。
+        BodyScene incompleteScene = new BodyScene(presentation().toByteArray());
+        assertThrows(IllegalArgumentException.class, () -> new MeridianFlow(incompleteScene, provider).update(body));
+
+        // 未解锁经脉即使有真实在途和显式路径，也不能泄露其几何。
+        model.setVisuals(1, model.getVisuals(1).toBuilder().setTargetKind(BodyTargetKind.MERIDIAN)
+                .setMinimumRealm(Realm.TRUE_QI));
+        BodyStructure hidden = body.getStructure().toBuilder().removeOrgans(1)
+                .addMeridians(MeridianDefinition.newBuilder().setId("receiver").addPorts(Port.newBuilder().setId("in"))).build();
+        MeridianFlow gated = new MeridianFlow(new BodyScene(model.build().toByteArray()), provider);
+        gated.update(body.toBuilder().setStructure(hidden).build());
+        assertTrue(gated.flights().isEmpty());
+    }
+
+    private static float maximumHeight(MeridianFlow flow) {
+        // 扫描展示时间而非等待墙钟；断言整条轨迹确实经过内容声明的交汇高度。
+        long start = System.nanoTime();
+        float maximum = Float.NEGATIVE_INFINITY;
+        for (int millis = 0; millis <= 1000; millis++) {
+            maximum = Math.max(maximum, flow.flights().iterator().next().point(start + millis * 1_000_000L, 0).y);
+        }
+        return maximum;
+    }
+
+    @Test
     public void meridianSummaryUsesSnapshotWithoutInterpretingAddonConditions() {
         // 非人构型只按权威库存、容量和开拓进度展示，条件由内容包发布卡片。
         var body = BodySnapshot.newBuilder().setStructure(BodyStructure.newBuilder()
-                        .addMeridians(MeridianDefinition.newBuilder().setId("tip").setLumenCapacity(8)))
+                        .addMeridians(MeridianDefinition.newBuilder().setId("tip").setLumenVolume(8)))
                 .addMeridianStates(MeridianState.newBuilder().setId("tip").setCondition(MeridianCondition.INTACT)
-                        .setLumenQi(QiInventory.newBuilder().addEntries(Qi.newBuilder().setAmount(4)))
+                        .setLumenQi(QiInventory.newBuilder().addEntries(Qi.newBuilder().setAmount(4).setDensity(1)))
                         .setOpening(MeridianOpening.newBuilder().setStage(MeridianOpeningStage.IN_PROGRESS).setProgress(.25))).build();
         var summary = OpeningCards.summary(body, "tip");
         assertEquals(.5, meter(summary, "storage").getFraction(), 0);
         assertEquals(.25, meter(summary, "opening").getFraction(), 0);
         assertEquals(OperationMeterState.METER_READY, meter(summary, "condition").getState());
+    }
+
+    @Test
+    public void meridianStorageFractionUsesDensityAdjustedVolume() {
+        // 高密度真元数量不等于占用体积，内观填充应按实际体积计算。
+        QiInventory inventory = QiInventory.newBuilder()
+                .addEntries(Qi.newBuilder().setAmount(4).setDensity(1))
+                .build();
+
+        assertEquals(.5, QiDisplay.storageFraction(inventory, 8), 0);
     }
 
     private static MeridianOperationMeter meter(MeridianOperationView view, String id) {
@@ -59,13 +132,13 @@ public class BodyPresentationTest {
     @Test
     public void sharedQiProjectionDoesNotCountReservationsTwice() {
         // 到账、外壁、器官输入、缓存和在途各有唯一账户，原料与真元不会偷换统计口径。
-        var inventory = QiInventory.newBuilder().addEntries(Qi.newBuilder().setAmount(2)).build();
+        var inventory = QiInventory.newBuilder().addEntries(Qi.newBuilder().setAmount(2).setDensity(1)).build();
         var body = BodySnapshot.newBuilder().setStructure(BodyStructure.newBuilder()
                         .addMeridians(MeridianDefinition.newBuilder().setId("channel").addPorts(Port.newBuilder().setId("in")))
                         .addConnections(Connection.newBuilder().setId("route").setTo("in")))
                 .addMeridianStates(MeridianState.newBuilder().setId("channel").setLumenQi(inventory).setWallQi(inventory))
                 .addOrganStates(OrganState.newBuilder().setBuffer(inventory).setProcess(OrganProcess.newBuilder()
-                        .setRecipe(OrganRecipe.newBuilder().setInput(inventory))))
+                        .setRecipe(OrganRecipe.newBuilder().setInput(inventory)).setInput(inventory)))
                 .addTransits(QiTransit.newBuilder().setConnectionId("route").setCargo(inventory)).build();
         assertEquals(2, QiDisplay.lumen(body), 0);
         assertEquals(2, QiDisplay.incoming(body, "channel"), 0);
@@ -93,9 +166,9 @@ public class BodyPresentationTest {
         BodyScene scene = new BodyScene(presentation().toByteArray());
         BodySnapshot body = BodySnapshot.newBuilder().setId("creature-instance").setTemplate(scene.presentation().getTemplate())
                 .setStructure(BodyStructure.newBuilder().addOrgans(OrganDefinition.newBuilder().setId("crystal")
-                        .setDisplayName("晶囊").setMaxHp(9).setQiCapacity(4).setThroughputPerSecond(2)))
+                        .setDisplayName("晶囊").setMaxHp(9).setVolumeCapacity(4).setThroughputPerSecond(2)))
                 .addOrganStates(OrganState.newBuilder().setId("crystal").setHp(3)
-                        .setBuffer(QiInventory.newBuilder().addEntries(Qi.newBuilder().setAmount(0.25))))
+                        .setBuffer(QiInventory.newBuilder().addEntries(Qi.newBuilder().setAmount(0.25).setDensity(1))))
                 .build();
         scene.requireTemplate(body);
         BodyVisual node = scene.layer("crystals").get(0);

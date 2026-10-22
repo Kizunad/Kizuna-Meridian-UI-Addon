@@ -11,7 +11,6 @@ import dev.kizuna.meridian.server.GatheringSession;
 import dev.kizuna.meridian.server.OpeningSession;
 import dev.kizuna.meridian.protocol.pb.OpeningMessages.MeridianOpeningRequest;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.ResponseEnvelope;
-import dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode;
 import dev.kizuna.meridian.error.MeridianErrors;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.RequestFailure;
 
@@ -29,16 +28,11 @@ public final class GatheringBridge<C> implements ServerModuleSession<C> {
     private final GatheringSession<C> session;
     private final OpeningSession<C> opening;
 
-    public GatheringBridge(ServerConnection<C> connection, GatheringSession<C> session) {
-        // 会话由宿主认证后创建，不从请求中的 body_id 推导权限。
-        this(connection, session, null);
-    }
-
     public GatheringBridge(ServerConnection<C> connection, GatheringSession<C> session, OpeningSession<C> opening) {
         // 两种操作使用宿主提供的同一身体核心，桥接只路由消息，不计算资源。
-        this.connection = connection;
-        this.session = session;
-        this.opening = opening;
+        this.connection = java.util.Objects.requireNonNull(connection, "connection");
+        this.session = java.util.Objects.requireNonNull(session, "gathering session");
+        this.opening = java.util.Objects.requireNonNull(opening, "opening session");
     }
 
     public static <C> void register(ServerModuleRegistry<C> registry,
@@ -52,9 +46,9 @@ public final class GatheringBridge<C> implements ServerModuleSession<C> {
     }
 
     private static Capability capability(Direction direction, String type) {
-        // 聚气是窗口的可选能力，缺少宿主接入时仍可使用只读身体查看器。
+        // 完整装配必须提供操作路由，握手不能忽略能力缺失。
         return Capability.newBuilder().setModule(MODULE).setVersion(1).setDirection(direction)
-                .setRequired(false).setPayloadType(type).build();
+                .setRequired(true).setPayloadType(type).build();
     }
 
     @Override
@@ -62,13 +56,7 @@ public final class GatheringBridge<C> implements ServerModuleSession<C> {
         // 公共路由已验证消息方向；聚气核心继续校验字段、身份、revision 和业务权限。
         if (request.message().equals(OPENING_REQUEST)) {
             MeridianOpeningRequest intent = request.payload(MeridianOpeningRequest.getDefaultInstance());
-            if (opening == null) {
-                connection.send(OPENING_RESPONSE, ResponseEnvelope.newBuilder().setProtocolVersion(1)
-                        .setRequestId(intent.getRequestId()).setFailure(RequestFailure.newBuilder()
-                                .setCode(FailureCode.OPENING_RULE_NOT_FOUND)).build());
-            } else {
-                connection.send(OPENING_RESPONSE, opening.handle(intent));
-            }
+            connection.send(OPENING_RESPONSE, opening.handle(intent));
             return true;
         }
         GatheringRequest intent = request.payload(GatheringRequest.getDefaultInstance());

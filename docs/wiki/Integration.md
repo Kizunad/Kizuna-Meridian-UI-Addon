@@ -1,12 +1,16 @@
 # 构建与依赖
 
+内观新增必需的 `MeridianSceneExtension` 客户端接线，提供标题、锁定原因、组件、快照更新、按键优先权与关窗清理。Human-UI负责人体玩法；`BodyCanvas.effects`只投影模型空间实线圆环（`Marker` 的半径与线宽均为屏幕像素，颜色含义由附属决定）和光团颜色。修炼页的独立练习入口（`meridian_ui:practice`）要求札记权限且 `lockedReason()` 为空；未解锁时从菜单隐藏，直接打开也被拒绝。窗口工厂再次校验，保留统一锁形提示卡（`LockedNotice`）用于锁定提示；撤权关闭已有窗口并停止活动。吐纳入口独立要求聚气卷，经脉入口要求札记，读完对应残卷才显示相应菜单项。练习控件固定占场景底部 144 逻辑像素。`QiTransit.circuit` 按整圈线路和权威工作进度显示，普通运输仍按单段到达插值。不会通过 Framework 通用协议传人体坐标。
+
 经脉操作卡扩展需要 Framework 当前源码的 `operation_ui.proto`，吐纳到货累计需要 `BreathingView.stored_qi`。这些是工作区契约变更，运行时须同步更新 Framework、Human Fabric 和 UI，不能只替换 UI JAR。多 Addon 的注册、更新、请求和卸载见[经脉操作卡](Meridian-Opening.md)。
+
+Human-UI 是客户端必需运行依赖：`fabric.mod.json` 声明 `meridian_human_ui`，Gradle 固定装配同级仓库的安装 JAR。UI 只编译通用路线接口，Human-UI 编译使用 UI 接口与 Human 模型，二者不形成源码编译环。首次从空构建目录装配时，先在 UI 执行 `./gradlew :client:remapJar` 生成接口所在 JAR，再在 Human-UI 执行 `./gradlew build`，最后回 UI 执行完整 `./gradlew build`；之后修改接口也按此顺序重建。Framework、Human、UI、Items、Damage、Healing、Human-UI、Players-Animation 在适用端整套必装。处理后的依赖审计见 Human-UI 的 `docs/wiki/Dependency-Audit.md`。
 
 ## 本地构建
 
-需要 Java 17、独立经脉框架和 Inventory UI Framework 两个仓库。默认目录关系：
+需要 Java 17、八个同级 Meridian/Animation 仓库，以及 Inventory UI、BS3D 的已构建产物。默认目录关系示例：
 
-打坐预览适配器编译还需已构建的 Player Animations JAR，默认读取同级 `Kizuna-Players-Animation`。可用 `-PplayerAnimationDir="/path/to/animation-checkout"` 指定。它是 `modCompileOnly` 可选依赖，正式运行未安装时使用生物静态模型；开发演示会装载此 JAR。打坐需该 checkout 已包含 `meditate` 资源，旧版本只有渲染 API 时会静态回退。
+打坐预览通过 `modImplementation` 直接依赖同级 `Kizuna-Players-Animation` 的公开 API。`BreathingCanvas` 和 `MeditationAvatar` 不判断安装状态、不反射调用。吐纳要求动画侧已加载模型及 `meditate`，缺资源明确报错。当前动画 JAR 已包含双体型骨架与八段动画，2026-10-21 WN 验收直接使用 JAR 内资源；开发装配同样无需外置 `93f8b5b` 补丁资源包。预览按真实玩家选择 classic/slim；外世界同步由 Human 服务端调度，预览播放不作为外世界同步成功的依据。
 
 ```text
 Code/
@@ -47,7 +51,9 @@ Windows 对应使用 `gradlew.bat`。Gradle Wrapper 包含分发校验和，源�
 
 经脉框架使用自己的 `shared/src/main/proto/`，Inventory UI 使用自己的公共协议目录生成消息。UI Addon 复用两套各司其职的 protoc 生成类，不复制 `.proto` 或维护平行消息。本轮模型资源协议新增于经脉框架，而非人体或 UI 私有目录。
 
-Human Addon 仍由宿主作为具体生物内容安装，不是 UI 的强制前置。
+Human Addon 由宿主装配人体内容，客户端通过必需的 Human-UI 与 UI 一起安装；UI 源码仍不引用人体实现。
+
+人体专属光迹及后续人体表现归独立 `Kizuna-Meridian-Human-UI-Addon`，它依赖 Human 与本包，通过必需的客户端 `MeridianRouteProvider` 接入。UI 声明其为强制运行依赖；Framework 无新增光迹协议。修改接口后须先重新构建本包客户端 JAR，再构建 Human-UI。注册方式与约束见[经脉光迹](Meridian-Opening.md)。
 
 经脉操作还要求 Framework 的 `opening.proto`、`BodyViewUpdate.opening/operations` 和 `OpeningSession`，以及 Inventory UI 的六参数 `Feature` 菜单可见性字段；先重建对应框架再构建本包。人体条件与操作卡由 Human 提供。单击/双击经脉仅选中高亮，F/G 直接操作；通用操作卡保留隐藏入口供宿主显式打开，不重复占用功能菜单。具体消息与宿主调度职责见[经脉操作接入](Meridian-Opening.md)。
 
@@ -62,26 +68,25 @@ Human Addon 仍由宿主作为具体生物内容安装，不是 UI 的强制前�
 
 客户端 JAR 包含 Fabric 窗口入口、通用查看器及 XML；没有人体模型、演示、测试或另一份核心。宿主仍需提供经脉 Java 库与依赖，并向窗口交付已授权的身体快照。经脉框架目前没有 Fabric mod ID，不能只把 UI JAR 放进 `mods` 就视为完整部署。
 
-`BodyPresentationTest` 验证非人体映射、快照状态与坏资源拒绝；真实客户端演示验证下述交互及[手动吐纳](Gathering.md)。生产身体查询入口、玩家实体绑定与资源协商仍由宿主接入。吐纳方向、瞄准、空气与消耗使用框架独立 Protobuf 消息。
+`BodyPresentationTest` 验证非人体映射、快照状态与坏资源拒绝；游戏内交互及[手动吐纳](Gathering.md)由 Human-UI 的整合服 smoke 在真实玩家身体上验收（见下节）。生产身体查询入口、玩家实体绑定与资源协商仍由宿主接入。吐纳方向、## 游戏内验收
 
-## 游戏内演示
+真实玩家由 Human 的 `fabric/` 宿主推送 `presentation.proto` 的 `BodyViewUpdate`。客户端在 `meridian:body_view` 接收有界 Protobuf，断线清理、拒绝跨连接迟到消息与倒退版本；此入口仅作展示。Human 适配目前提供行走/疾跑身体与疲劳数值，`I` → 检视 → 勾选肌肉可查看实际占用和恢复半衰期；默认只显示使用玩家基础皮肤的体表。精确当前可用力量/耐力使用宿主 `/meridian tissue <id>` 查询。UI 本身没有 Human 编译依赖。
 
-真实玩家可由 Human 的可选 `fabric/` 宿主推送 `presentation.proto` 的 `BodyViewUpdate`。客户端在 `meridian:body_view` 接收有界 Protobuf，断线清理、拒绝跨连接迟到消息与倒退版本；此入口仅作展示。Human 适配目前提供行走/疾跑身体与疲劳数值，`I` → 检视 → 勾选肌肉可查看实际占用和恢复半衰期；默认只显示使用玩家基础皮肤的体表。精确当前可用力量/耐力使用宿主 `/meridian tissue <id>` 查询。UI 本身没有新增 Human 编译依赖。
+这一路径依赖当前含 `BodyViewUpdate` 的框架源码。Human Fabric 宿主同时提供真实吐纳通道，UI 自动绑定并沿用原三维界面，详见[吐纳接入](Gathering.md)。盘坐预览须装入含 `meditate` 资源的 Player Animations。
 
-这一路径依赖当前含 `BodyViewUpdate` 的框架源码。Human Fabric 宿主同时提供真实吐纳通道，UI 自动绑定并沿用原三维界面，详见[吐纳接入](Gathering.md)。盘坐预览须装入含 `meditate` 资源的 Player Animations；下述标题界面演示使用独立账本。
-
-可选 Human 仓库仅在显式传入路径时加入开发演示，生产 UI 仍不依赖具体生物：
+2026-10-22 起本仓不再提供标题画面 demo 源集（原 `runDemo` 及 `uiSmoke`、`gatheringSmoke`、`responsiveSmoke` 三种验收模式）。修炼入口与内部层由 Progression 服务端授权，标题画面没有服务器无法打开，且客户端不得自行解锁。原检查点改在 `Kizuna-Meridian-Human-UI-Addon` 的整合服 smoke 中、在真实玩家身体上执行：
 
 ```bash
-./gradlew -PhumanAddonDir="../Kizuna-Meridian-Human-Addon" -PplayerAnimationDir="/path/to/animation-checkout" :client:runDemo
-# Linux 无窗口环境的整体交互验收：
-xvfb-run -a ./gradlew -PhumanAddonDir="../Kizuna-Meridian-Human-Addon" -PuiSmoke=true :client:runDemo
-# 分辨率与 GUI 缩放的整体交互验收：
-xvfb-run -a -s "-screen 0 1920x1200x24" ./gradlew -PhumanAddonDir="../Kizuna-Meridian-Human-Addon" -PplayerAnimationDir="/path/to/animation-checkout" -PresponsiveSmoke=true :client:runDemo
+# 在 Human-UI 仓库运行；Linux 无窗口环境加 xvfb-run，Windows 直接运行 gradlew.bat。
+xvfb-run -a -s "-screen 0 1920x1100x24" ./gradlew :client:runSmoke --offline --console=plain --no-watch-fs
 ```
 
-资源加载后普通演示自动打开工作台中的“检视”和“吐纳”窗口，后者在前。演示使用 Human 可信出生函数创建独立内存身体并接入真实聚气核心；`uiSmoke` 只打开检视窗口，使用只读样例进行模型回归。模型始终来自 Human 客户端 JAR。JavaExec 固定使用 Java 17。成功的模型 smoke 正常退出，在 `client/build/demo/body-smoke-ok.txt` 写入结果，`screenshots/` 保存各层与聚焦截图。
+| 原检查点 | 现由整合服 smoke 承担 |
+|---|---|
+| 五层显示、真实 Screen 点击选取、聚焦完成、背侧肌肉转向、全部可见器官与经脉的点击与信息、快照刷新保留视角与选择、中键清除选择、多层勾选与隐藏清除选择、全层关闭不可选、眼球叠加点击、GPU 实际出图、关窗清理（原 `uiSmoke`） | `BodyViewerJourney`，截图 `body-*.png` |
+| 五组分辨率与 GUI 缩放下身体与吐纳窗口的边界、互不覆盖、组件与选择保留、详情滚轮、心脏点击、吐纳控件命中与权威会话保持、首次开始先显示指引（原 `responsiveSmoke`） | `ResponsiveJourney`，截图 `responsive-*.png` |
+| 吐纳控件布局与悬浮明细、中键旋转、真实鼠标吸呼、肺容量上下限、吸呼音效播放与停止、精力消耗与真实摄入、关窗停止、独立重开与再次开始（原 `gatheringSmoke`） | `ManualBreathingJourney`，截图 `breathing-*.png` |
+| 内存宿主的环境与身体守恒、跨环境窗口续窗 | 宿主逻辑，由 Human `HumanGatheringTest`、`HumanPlayerBodyTest` 与 Framework `OrganIntakeTest` 回归覆盖 |
+| 体表剪影与原版玩家模型尺寸一致 | 暂无对应：该比对在退役前已失败（Human 表层模型与原版尺寸不一致），待单独修复后再补回 |
 
-验收覆盖五层、真实 Screen 点击心脏、相机聚焦完成、快照刷新保留视角、中键清除选择、快照不变和窗口清理。演示代码与 Human 的依赖只属于 `src/demo`，不进入正式 UI JAR。具体宿主接口见[模型接入](Body-Viewer.md)。
-
-`responsiveSmoke` 在同一客户端切换 1440×1000（GUI 2/4）、960×720（GUI 3）、1920×1080（自动/GUI 2），检查组件边界、区域互不覆盖、保留身体选择、模型点击及吐纳按钮输入。成功标记为 `client/build/demo/responsive-smoke-ok.txt`，截图保存在 `screenshots/responsive-*.png`。
+UI 生产源码不引用具体生物；客户端 JAR 不包含任何验收代码。具体宿主接口见[模型接入](Body-Viewer.md)。creenshots/responsive-*.png`。

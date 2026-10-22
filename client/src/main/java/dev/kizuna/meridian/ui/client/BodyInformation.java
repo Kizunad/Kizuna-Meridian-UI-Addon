@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.ui.client;
 
+import dev.kizuna.meridian.protocol.QiDensity;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.BodyVisual;
 import java.util.ArrayList;
@@ -68,10 +69,11 @@ public final class BodyInformation {
                     lines.add("器官状态尚未同步");
                 } else {
                     lines.add("HP：" + number(state.getHp()) + " / " + number(definition.getMaxHp()));
-                    lines.add("缓存：" + number(amount(state.getBuffer())) + " / " + number(definition.getQiCapacity()) + " 元");
+                    lines.add("缓存：" + number(amount(state.getBuffer())) + " / "
+                            + number(QiDensity.displayedCapacity(definition.getVolumeCapacity(), state.getBuffer())) + " 元");
                     if (state.hasProcess()) {
                         lines.add("加工：" + state.getProcess().getRecipe().getId());
-                        lines.add("加工中原料：" + number(amount(state.getProcess().getRecipe().getInput())) + " 元");
+                    lines.add("加工中原料：" + number(amount(state.getProcess().getInput())) + " 元");
                     } else {
                         lines.add("加工：空闲");
                     }
@@ -87,8 +89,10 @@ public final class BodyInformation {
                 if (state == null) {
                     lines.add("经脉状态尚未同步");
                 } else {
-                    lines.add("内腔：" + number(amount(state.getLumenQi())) + " / " + number(definition.getLumenCapacity()) + " 元");
-                    lines.add("外壁：" + number(amount(state.getWallQi())) + " / " + number(definition.getWallCapacity()) + " 元");
+                    lines.add("内腔：" + number(amount(state.getLumenQi())) + " / "
+                            + number(QiDensity.displayedCapacity(definition.getLumenVolume(), state.getLumenQi())) + " 元");
+                    lines.add("外壁：" + number(amount(state.getWallQi())) + " / "
+                            + number(QiDensity.displayedCapacity(definition.getWallVolume(), state.getWallQi())) + " 元");
                     lines.add("疲劳：" + number(state.getFatigue()));
                     lines.add("状态：" + switch (state.getCondition()) {
                         case INTACT -> "完好";

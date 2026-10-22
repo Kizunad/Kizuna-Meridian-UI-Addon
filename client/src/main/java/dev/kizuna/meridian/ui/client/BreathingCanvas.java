@@ -10,7 +10,6 @@ import io.wispforest.owo.ui.core.OwoUIDrawContext;
 import io.wispforest.owo.ui.core.Component.FocusSource;
 import io.wispforest.owo.ui.core.Sizing;
 import io.wispforest.owo.ui.util.ScissorStack;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.SimpleFramebuffer;
 import net.minecraft.client.render.*;
@@ -48,7 +47,9 @@ public final class BreathingCanvas extends BaseComponent {
     private final Map<String, BodyMesh> meshes = new HashMap<>();
     private BreathingView view = BreathingView.getDefaultInstance();
     private List<BodyVisual> organs = List.of();
-    private MeditationAvatar avatar;
+    private final MeditationAvatar avatar;
+    private final OpeningOverlay openingOverlay;
+    private int openingParticles;
     private SimpleFramebuffer framebuffer;
     private BreathAction held = HOLD;
     private Vector3f aim = new Vector3f(.5f, .4f, .75f);
@@ -62,6 +63,7 @@ public final class BreathingCanvas extends BaseComponent {
     public BreathingCanvas(BodyScene scene, Consumer<BreathControl> sender) {
         // 器官坐标和动画挂点由生物内容提供，UI 把口鼻对齐三维场景入口。
         this.scene = scene;
+        openingOverlay = new OpeningOverlay(scene);
         this.sender = sender;
         sizing(Sizing.fill(100), Sizing.fill(100));
         id("breathing-scene");
@@ -73,15 +75,13 @@ public final class BreathingCanvas extends BaseComponent {
             centers.put(visual.getId(), center.div(visual.getVerticesCount()));
         }
         BreathingPresentation presentation = scene.presentation().getBreathing();
-        if (presentation.getAnimationProvider().equals("kizuna_players_animation")
-                && FabricLoader.getInstance().isModLoaded("kizuna_players_animation")) {
-            avatar = MeditationAvatar.create(presentation.getAnimationId());
-        }
+        avatar = MeditationAvatar.create(presentation.getAnimationId());
     }
 
     public void update(GatheringView gathering) {
         // 按实际接收间隔估计展示速度；重复快照不重置轨迹，重生不跨旧位置插值。
         BreathingView incoming = gathering.getBreathing();
+        openingOverlay.update(gathering.getBody());
         if (!view.getParticlesList().equals(incoming.getParticlesList())) {
             long now = System.nanoTime();
             for (BreathParticle particle : incoming.getParticlesList()) {
@@ -97,7 +97,7 @@ public final class BreathingCanvas extends BaseComponent {
         if (!view.getActive()) {
             held = HOLD;
         }
-        audio.update(view, held, tutorial || rotating || !MinecraftClient.getInstance().isWindowFocused());
+        audio.update(view, view.getAutomatic() ? view.getAction() : held, tutorial || rotating || !MinecraftClient.getInstance().isWindowFocused());
     }
 
     public void tutorial(boolean visible) {
@@ -105,6 +105,11 @@ public final class BreathingCanvas extends BaseComponent {
         tutorial = visible;
         held = HOLD;
         audio.stop();
+    }
+
+    public BreathingView breathingView() {
+        // 附属与交互验收只读服务端投影，不暴露可写身体或粒子模拟器。
+        return view;
     }
 
     public void stopInput() {
@@ -134,10 +139,10 @@ public final class BreathingCanvas extends BaseComponent {
     }
 
     public void tickInput() {
-        // 心跳在 tick 上续期，渲染频率和缩放不会增加摄入速度。
+        // 自动由服务器持续驱动，无需手动心跳；切换桌面焦点不会结束自动练习。
         long now = System.nanoTime();
-        audio.update(view, held, tutorial || rotating || !MinecraftClient.getInstance().isWindowFocused());
-        if (!view.getActive() || tutorial || now - heartbeatNanos < 250_000_000L) {
+        audio.update(view, view.getAutomatic() ? view.getAction() : held, tutorial || rotating || !MinecraftClient.getInstance().isWindowFocused());
+        if (!view.getActive() || view.getAutomatic() || tutorial || now - heartbeatNanos < 250_000_000L) {
             return;
         }
         if (!MinecraftClient.getInstance().isWindowFocused()) {
@@ -198,15 +203,16 @@ public final class BreathingCanvas extends BaseComponent {
         try {
             ModelPoint intake = scene.presentation().getBreathing().getIntakePoint();
             Vector3f mouth = new Vector3f(intake.getX(), intake.getY(), intake.getZ());
-            if (avatar != null) {
-                avatar.sample(airRatio, held == EXHALE);
-                avatar.attachment(scene.presentation().getBreathing().getIntakeBone()).transformPosition(mouth);
-            }
+            // 自动呼吸的姿态跟随权威吸呼阶段，不能依赖未按下的手动键。
+            BreathAction displayedAction = view.getAutomatic() ? view.getAction() : held;
+            avatar.sample(airRatio, displayedAction == EXHALE);
+            avatar.attachment(scene.presentation().getBreathing().getIntakeBone()).transformPosition(mouth);
             Matrix4f viewMatrix = camera.view();
             Matrix4f bodyMatrix = new Matrix4f(viewMatrix).translate(-mouth.x, -mouth.y, -mouth.z);
-            float floor = avatar == null ? scene.presentation().getMinimum().getY() - mouth.y : avatar.minimumY() - mouth.y;
+            float floor = avatar.minimumY() - mouth.y;
             drawFloor(viewMatrix, floor);
             drawBody(bodyMatrix, airRatio);
+            openingParticles = openingOverlay.draw(bodyMatrix, avatar::attachment, null, System.nanoTime(), .005f, true);
             drawParticles(viewMatrix);
         } finally {
             // 恢复主窗口矩阵、视口与 UI 状态，文字随后按控件顺序覆盖场景。
@@ -260,21 +266,15 @@ public final class BreathingCanvas extends BaseComponent {
         RenderSystem.depthMask(true);
         BufferBuilder buffer = Tessellator.getInstance().getBuffer();
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-        if (avatar != null) {
-            buffer.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-            avatar.draw(buffer, matrix);
-            BufferRenderer.drawWithGlobalProgram(buffer.end());
-        } else {
-            for (BodyVisual node : scene.layer(scene.presentation().getBreathing().getSurfaceLayer())) {
-                meshes.computeIfAbsent(node.getId(), id -> new BodyMesh(node, false)).draw(matrix, 0x303B43, 1, 170);
-            }
-        }
+        buffer.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        avatar.draw(buffer, matrix);
+        BufferRenderer.drawWithGlobalProgram(buffer.end());
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
         for (BodyVisual organ : organs) {
             Vector3f center = centers.get(organ.getId());
             Matrix4f organMatrix = new Matrix4f(matrix);
-            if (avatar != null && !organ.getAnimationBone().isEmpty()) {
+            if (!organ.getAnimationBone().isEmpty()) {
                 organMatrix.mul(avatar.attachment(organ.getAnimationBone()));
             }
             float expansion = (float) (.84 + .23 * airRatio);
@@ -286,10 +286,15 @@ public final class BreathingCanvas extends BaseComponent {
 
     private void drawParticles(Matrix4f viewMatrix) {
         // 粒子是三维位置上朝向相机的面片，深度测试负责身体前后遮挡。
+        int drawnParticles = 0;
         RenderSystem.enableDepthTest();
         RenderSystem.depthMask(false);
         BufferBuilder buffer = beginTriangles();
         for (BreathParticle particle : view.getParticlesList()) {
+            // 真正捕获仍读取完整服务端粒子集合，上限只裁剪装饰绘制。
+            if (drawnParticles++ >= Math.max(0, EffectSettings.particleLimit() - openingParticles)) {
+                break;
+            }
             ParticleDisplay display = particles.get(particle.getId());
             if (display == null) {
                 continue;
@@ -314,17 +319,18 @@ public final class BreathingCanvas extends BaseComponent {
             disc(buffer, eye, .014f, 0xD0000000 | color);
             disc(buffer, eye, .005f, 0xE5FFFFFF);
         }
-        boolean flowing = view.getActive() && held != HOLD && view.getAction() == held;
-        if (flowing && ((held == INHALE && view.getAirLiters() < view.getCapacityLiters())
-                || (held == EXHALE && view.getAirLiters() > 0))) {
-            drawAirflow(buffer, viewMatrix);
+        BreathAction displayedAction = view.getAutomatic() ? view.getAction() : held;
+        boolean flowing = view.getActive() && displayedAction != HOLD && view.getAction() == displayedAction;
+        if (!EffectSettings.reducedMotion() && flowing && ((displayedAction == INHALE && view.getAirLiters() < view.getCapacityLiters())
+                || (displayedAction == EXHALE && view.getAirLiters() > 0))) {
+            drawAirflow(buffer, viewMatrix, displayedAction);
         }
         BufferRenderer.drawWithGlobalProgram(buffer.end());
     }
 
-    private void drawAirflow(BufferBuilder buffer, Matrix4f viewMatrix) {
-        // 五条短流线展示口鼻附近的方向；真实气流影响全空间，视觉不铺满粒子雾。
-        Vector3f direction = BreathingCamera.world(aim.x, aim.y, aim.z);
+    private void drawAirflow(BufferBuilder buffer, Matrix4f viewMatrix, BreathAction displayedAction) {
+        // 自动模式固定朝正前方，与权威气流一致；手动模式跟随玩家瞄准。
+        Vector3f direction = view.getAutomatic() ? new Vector3f(0, 0, 1) : BreathingCamera.world(aim.x, aim.y, aim.z);
         if (direction.lengthSquared() < .0001f) {
             direction.set(0, 0, 1);
         }
@@ -338,7 +344,7 @@ public final class BreathingCanvas extends BaseComponent {
         for (int strand = 0; strand < 5; strand++) {
             double angle = strand * Math.PI * 2 / 5;
             double travel = (ageSeconds * .65 + strand * .19) % 1;
-            double start = held == INHALE ? .82 - travel * .55 : .06 + travel * .55;
+            double start = displayedAction == INHALE ? .82 - travel * .55 : .06 + travel * .55;
             Vector3f previous = null;
             for (int segment = 0; segment <= 6; segment++) {
                 double along = start + segment * .035;
@@ -360,6 +366,10 @@ public final class BreathingCanvas extends BaseComponent {
         // 文字在场景纹理之后绘制，模型和底座不占用前景图层。
         var font = MinecraftClient.getInstance().textRenderer;
         String hint = view.getActive() ? "左吸 · 右呼 · 中键旋转 · 滚轮缩放" : "中键旋转 · 滚轮缩放";
+        if (view.getActive() && view.getAutomatic()) {
+            // 自动模式由服务端吸呼，提示里不再要求玩家按左右键。
+            hint = "自动吸呼中 · 中键旋转 · 滚轮缩放";
+        }
         hint = font.trimToWidth(hint, Math.max(0, width - 24));
         context.drawText(font, hint, x + (width - font.getWidth(hint)) / 2, y + height - 18, 0xFF81928F, false);
     }
@@ -509,7 +519,7 @@ public final class BreathingCanvas extends BaseComponent {
             }
             return true;
         }
-        if (!view.getActive() || tutorial || rotating || (button != 0 && button != 1)) {
+        if (!view.getActive() || view.getAutomatic() || tutorial || rotating || (button != 0 && button != 1)) {
             return false;
         }
         aim(mouseX, mouseY);

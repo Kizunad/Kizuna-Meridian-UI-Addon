@@ -2,6 +2,11 @@ package dev.kizuna.meridian.ui.client;
 
 /** 展示层错误集中定义，身体请求仍使用框架 Protobuf 失败码。 */
 public final class UiErrors {
+    public static final String INVALID_EFFECT_SETTINGS = "内观效果配置无效：粒子上限应为 0～384，减少动态应为 true/false";
+    public static final String REQUIRED_OPENING_EFFECTS = "开脉表现需要唯一生物扩展及有效路线";
+    public static final String REQUIRED_SCENE_EXTENSION = "内观需要唯一的生物场景扩展";
+    public static final String REQUIRED_HOST_CHANNEL = "缺少必需的身体宿主操作通道：";
+    public static final String MISSING_MEDITATION_ASSETS = "缺少必需的玩家骨架或吐纳动画资源：";
     public static final String INVALID_OPERATION = "经脉操作的命名空间、身体版本或进度数据无效";
     public static final String OPERATION_TUTORIAL_SAVE = "无法保存经脉操作指引偏好";
 
@@ -16,6 +21,7 @@ public final class UiErrors {
     }
     public static final String TUTORIAL_SAVE = "无法保存吐纳指引已读偏好";
     public static final String GATHERING_UNAVAILABLE = "聚气连接不可用，请重新连接或刷新。";
+    public static final String GATHERING_LOCKED = "还没读过「聚气残卷」。去找到「聚气残卷」，右键读完，就能吐纳聚气和「自动吐纳」。";
     public static final String BREATHING_UNAVAILABLE = "服务器尚未提供吐纳能力，请检查生物附属的宿主接入。";
     public static final String OPENING_UNAVAILABLE = "宿主尚未提供此经脉的开拓规则或操作连接。";
     public static final String OPENING_TIMEOUT = "操作回执尚未到达，请查看最新状态后再试。";
@@ -70,6 +76,9 @@ public final class UiErrors {
     public static final String INVALID_COUNT = "展示层或节点数量不合法";
     public static final String INVALID_NODE = "节点身份、身体引用或颜色不合法：";
     public static final String INVALID_MESH = "三角网格为空或不完整：";
+    public static final String INVALID_CONNECTION_PATH = "光迹扩展返回的路径为空、点数不合法或坐标无效";
+    public static final String MISSING_CONNECTION_ENDPOINT = "光迹连接缺少端口绑定的模型";
+    public static final String REQUIRED_ROUTE_PROVIDER = "内观必须装配唯一的光迹路线提供者";
     public static final String INVALID_TEXTURE = "贴图资源身份或 UV 无效：";
     public static final String OUTSIDE_BOUNDS = "顶点超出整体包围盒：";
     public static final String INVALID_INDEX = "三角面引用越界：";

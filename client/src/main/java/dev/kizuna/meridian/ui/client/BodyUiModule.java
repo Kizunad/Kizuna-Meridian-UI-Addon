@@ -5,10 +5,13 @@ import dev.kizuna.inventoryui.client.ClientModule;
 import dev.kizuna.inventoryui.client.ClientRuntime;
 import dev.kizuna.inventoryui.registry.FrameworkCatalog;
 import dev.kizuna.inventoryui.window.UiWindowDefinition;
+import dev.kizuna.inventoryui.window.UiWindowManager.WindowKey;
+import dev.kizuna.meridian.progression.client.ClientProgression;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
 import dev.kizuna.meridian.protocol.pb.GatheringMessages.*;
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathControl;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.BodyViewUpdate;
+import dev.kizuna.meridian.protocol.pb.PresentationMessages.BodyViewRequest;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.MeridianOpeningRule;
 import dev.kizuna.meridian.protocol.pb.OpeningMessages.MeridianOpeningRequest;
 import dev.kizuna.meridian.protocol.pb.OperationUiMessages.*;
@@ -31,6 +34,10 @@ import java.util.function.Consumer;
 
 /** 通用窗口入口；宿主提供 Protobuf 身体及生物包的资源标识。 */
 public final class BodyUiModule implements ClientModule {
+    private static final Identifier BODY_VIEW_REQUEST = new Identifier("meridian", "body_view_request");
+    private ClientRuntime runtime;
+    private WindowKey cultivationKey;
+    private boolean cultivationLocked;
     private static final Identifier HOST_GATHERING_REQUEST = new Identifier("meridian", "gathering_request");
     private static final Identifier HOST_GATHERING_RESPONSE = new Identifier("meridian", "gathering_response");
     private BodyScene scene;
@@ -51,7 +58,7 @@ public final class BodyUiModule implements ClientModule {
         return FrameworkCatalog.Module.of("meridian_ui:body", Set.of("kiui:core"),
                 new FrameworkCatalog.Window(new UiWindowDefinition("meridian_ui:body_window", "meridian_ui:body",
                         280, 180, 580, 400, Set.of(UiWindowDefinition.Capability.WINDOW))),
-                new FrameworkCatalog.Feature("meridian_ui:body", "检视", "修炼", "meridian_ui:body_icon", "meridian_ui:body_window"),
+                new FrameworkCatalog.Feature("meridian_ui:body", "检视", "身体", "meridian_ui:body_icon", "meridian_ui:body_window"),
                 new FrameworkCatalog.Window(new UiWindowDefinition("meridian_ui:cultivation_window", "meridian_ui:body",
                         280, 180, 560, 450, Set.of(UiWindowDefinition.Capability.WINDOW))),
                 new FrameworkCatalog.Feature("meridian_ui:cultivation", "吐纳", "修炼",
@@ -60,6 +67,11 @@ public final class BodyUiModule implements ClientModule {
                         280, 180, 560, 450, Set.of(UiWindowDefinition.Capability.WINDOW))),
                 new FrameworkCatalog.Feature("meridian_ui:meridians", "经脉", "修炼",
                         "meridian_ui:body_icon", "meridian_ui:meridian_window"),
+                new FrameworkCatalog.Window(new UiWindowDefinition("meridian_ui:practice_window", "meridian_ui:body",
+                        360, 280, 600, 480, Set.of(UiWindowDefinition.Capability.WINDOW))),
+                new FrameworkCatalog.Feature("meridian_ui:practice",
+                        dev.kizuna.meridian.ui.api.MeridianSceneExtension.required().title(), "修炼",
+                        "meridian_ui:body_icon", "meridian_ui:practice_window"),
                 new FrameworkCatalog.Window(new UiWindowDefinition("meridian_ui:meridian_operation_window", "meridian_ui:body",
                         220, 230, 290, 365, Set.of(UiWindowDefinition.Capability.WINDOW))),
                 new FrameworkCatalog.Feature("meridian_ui:meridian_operation", "经脉操作", "修炼",
@@ -69,6 +81,14 @@ public final class BodyUiModule implements ClientModule {
     @Override
     public void register(ClientBindings bindings) {
         // 同一生成消息同时支持本地宿主和已协商的网络路由，客户端不依赖权威实现。
+        for (String feature : List.of("meridian_ui:meridians", "meridian_ui:meridian_operation")) {
+            bindings.featureAccess(feature, ClientProgression::canCultivate);
+        }
+        // 菜单与直接打开共用各自残卷权限；具体练习门槛由必装生物扩展解释。
+        bindings.featureAccess("meridian_ui:cultivation", ClientProgression::canGather);
+        bindings.featureAccess("meridian_ui:practice", () -> ClientProgression.canCultivate()
+                && dev.kizuna.meridian.ui.api.MeridianSceneExtension.required().lockedReason().isEmpty());
+        ClientProgression.onChanged(this::progressChanged);
         meridians.register(bindings);
         ClientPlayNetworking.registerGlobalReceiver(new Identifier("meridian", "body_view"),
                 (client, handler, buffer, sender) -> {
@@ -84,7 +104,12 @@ public final class BodyUiModule implements ClientModule {
                         }
                     });
                 });
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> clearBody());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
+            // 断线可从网络线程通知，旧连接的迟到释放也不能清掉新身体。
+            if (client.getNetworkHandler() == null || client.getNetworkHandler() == handler) {
+                clearBody();
+            }
+        }));
         ClientPlayNetworking.registerGlobalReceiver(HOST_GATHERING_RESPONSE, (client, handler, buffer, sender) -> {
             // Fabric 宿主与公共路由使用同一生成消息，拒绝超大包及旧连接迟到回执。
             if (buffer.readableBytes() == 0 || buffer.readableBytes() > 1024 * 1024) {
@@ -132,16 +157,34 @@ public final class BodyUiModule implements ClientModule {
         });
         bindings.window("meridian_ui:cultivation_window", (runtime, window) -> {
             // 内观模型仍由生物附属提供；没有身体时只显示等待状态。
+            ClientProgression.requireCultivation();
+            WindowKey openedKey = window.key();
+            if (!ClientProgression.canGather()) {
+                // 吐纳入口仍在修炼页，窗口只给锁和找卷提示；记下锁定态，读完后关闭以便重开出真实场景。
+                cultivationKey = openedKey;
+                cultivationLocked = true;
+                window.scope().addCleanup(() -> {
+                    if (cultivationKey == openedKey) {
+                        cultivationKey = null;
+                    }
+                });
+                return new LockedNotice("吐纳", UiErrors.GATHERING_LOCKED);
+            }
             if (scene == null || body == null) {
                 return Components.label(Text.literal(UiErrors.MISSING_BODY));
             }
             cultivationPanel = new CultivationPanel(scene, this::controlBreathing);
+            cultivationKey = openedKey;
+            cultivationLocked = false;
             showGathering();
             CultivationPanel opened = cultivationPanel;
             window.scope().addCleanup(() -> {
                 if (cultivationPanel == opened) {
                     opened.close();
                     cultivationPanel = null;
+                }
+                if (cultivationKey == openedKey) {
+                    cultivationKey = null;
                 }
             });
             refreshGathering();
@@ -153,6 +196,13 @@ public final class BodyUiModule implements ClientModule {
         // 该通道只能由当前连接的服务器发送；客户端不把快照当作可写身体或计算依据。
         try {
             BodyViewUpdate update = BodyViewUpdate.parseFrom(payload);
+            if (!update.hasBody()) {
+                // 独立订阅回执不替换身体；拒绝后撤下内部窗口。
+                if (update.hasFailure()) {
+                    revokeCultivation();
+                }
+                return;
+            }
             if (update.getProtocolVersion() != 1 || !update.hasBody() || update.getBody().getId().isBlank()) {
                 throw UiErrors.invalid(UiErrors.INVALID_UPDATE);
             }
@@ -163,6 +213,7 @@ public final class BodyUiModule implements ClientModule {
             if (body == null) {
                 present(update.getBody(), resource);
                 bindFabricGathering();
+                subscribeIntrospection();
             } else if (body.getId().equals(update.getBody().getId())
                     && update.getBody().getRevision() >= body.getRevision()) {
                 update(update.getBody());
@@ -196,6 +247,8 @@ public final class BodyUiModule implements ClientModule {
             }
             scene = candidate;
             body = snapshot;
+            OpeningOverlay.clear();
+            OpeningOverlay.receive(snapshot);
             meridians.present(scene, snapshot);
             gathering = null;
             pendingRequest = "";
@@ -213,6 +266,7 @@ public final class BodyUiModule implements ClientModule {
             throw UiErrors.invalid(UiErrors.INVALID_UPDATE);
         }
         scene.requireTemplate(snapshot);
+        OpeningOverlay.receive(snapshot);
         if (panel != null) {
             panel.update(snapshot);
         }
@@ -228,6 +282,11 @@ public final class BodyUiModule implements ClientModule {
     public MeridianPanel meridianPanel() {
         // 宿主可检查当前经脉窗口，未打开时返回空。
         return meridians.panel();
+    }
+
+    public MeridianPanel practicePanel() {
+        // 暴露当前练习组件供宿主检查实际布局，关闭后返回空。
+        return meridians.practicePanel();
     }
 
     public io.wispforest.owo.ui.core.Component openingOperationRoot() {
@@ -279,6 +338,11 @@ public final class BodyUiModule implements ClientModule {
         return panel;
     }
 
+    public BodySnapshot snapshot() {
+        // 附属与交互验收读取已经通过连接身份和版本检查的同一不可变投影。
+        return body;
+    }
+
     public CultivationPanel cultivationPanel() {
         // 修炼窗口具有独立生命周期，未打开时返回空。
         return cultivationPanel;
@@ -292,14 +356,16 @@ public final class BodyUiModule implements ClientModule {
 
     public void refreshGathering() {
         // 查询只读取选项和状态，不在窗口刷新时领取灵气。
-        if (body != null && gatheringSender != null && pendingRequest.isEmpty()) {
+        if (ClientProgression.canGather()
+                && body != null && gatheringSender != null && pendingRequest.isEmpty()) {
             sendGathering(GatheringRequest.newBuilder().setInspect(InspectGathering.getDefaultInstance()));
         }
     }
 
     private void controlBreathing(BreathControl control) {
         // 背压只保留最新方向；停止意图不会因为上一份回执尚未到达而丢失。
-        if (body == null || gatheringSender == null) {
+        if (!ClientProgression.canGather()
+                || body == null || gatheringSender == null) {
             return;
         }
         queuedBreath = control;
@@ -322,7 +388,8 @@ public final class BodyUiModule implements ClientModule {
         if (!MinecraftClient.getInstance().isOnThread()) {
             throw UiErrors.invalid(UiErrors.WRONG_THREAD);
         }
-        if (response.getProtocolVersion() != 1 || body == null) {
+        if (!ClientProgression.canGather()
+                || response.getProtocolVersion() != 1 || body == null) {
             return;
         }
         boolean reply = response.getRequestId().equals(pendingRequest);
@@ -357,26 +424,60 @@ public final class BodyUiModule implements ClientModule {
 
     @Override
     public void protocolReady(ClientRuntime runtime) {
-        // 网络输送交给 Inventory UI；业务结果由独立 Protobuf 响应更新。
+        // 必装 Fabric 宿主提供操作通道；Inventory UI 仍管理窗口生命周期。
+        this.runtime = runtime;
         meridians.protocolReady(runtime);
-        if (bindFabricGathering()) {
-            return;
-        }
-        bindGathering(request -> runtime.protocol().request("meridian_ui:gathering_request", request,
-                System.currentTimeMillis()).thenAccept(outcome -> MinecraftClient.getInstance().execute(() -> {
-                    // 连接拒绝或超时允许重新查询；不自动用新 ID 重复启动。
-                    if (!outcome.accepted() && pendingRequest.equals(request.getRequestId())) {
-                        pendingRequest = "";
-                        gatheringError = UiErrors.GATHERING_UNAVAILABLE;
-                        showGathering();
-                    }
-                })));
+        bindFabricGathering();
     }
 
-    private boolean bindFabricGathering() {
-        // 已安装的游戏宿主直接提供同一吐纳契约；无该能力的服务器继续使用公共路由。
+    private void progressChanged() {
+        // 进度是连接权威投影；重置通知立即清窗口与尚未发出的控制意图。
+        if (!ClientProgression.canCultivate()) {
+            revokeCultivation();
+        }
+        // 聚气卷锁定态变化时关闭吐纳窗：撤权立即停止，解锁后重开就是真实吐纳场景。
+        if (runtime != null && cultivationKey != null && ClientProgression.canGather() == cultivationLocked) {
+            runtime.workspace().windows().close(cultivationKey);
+        }
+        meridians.progressChanged();
+        subscribeIntrospection();
+        refreshGathering();
+    }
+
+    private void revokeCultivation() {
+        // 先清背压队列再关窗，关闭回调不能重新发出旧吸气意图。
+        queuedBreath = null;
+        pendingRequest = "";
+        gathering = null;
+        if (runtime != null && cultivationKey != null) {
+            runtime.workspace().windows().close(cultivationKey);
+        }
+        meridians.revoke();
+        if (panel != null) {
+            panel.layer(scene.defaultLayerId());
+        }
+    }
+
+    private void subscribeIntrospection() {
+        // 真实服务端单独授权内部视图；未同步不冒充未读发起请求。
+        if (body == null || MinecraftClient.getInstance().getNetworkHandler() == null
+                || !ClientProgression.synchronizedWithServer()) {
+            return;
+        }
+        if (!ClientPlayNetworking.canSend(BODY_VIEW_REQUEST)) {
+            throw new IllegalStateException(UiErrors.REQUIRED_HOST_CHANNEL + BODY_VIEW_REQUEST);
+        }
+        var request = BodyViewRequest.newBuilder().setProtocolVersion(1).setRequestId(UUID.randomUUID().toString())
+                .setBodyId(body.getId()).setIntrospection(ClientProgression.canCultivate()).build();
+        var buffer = PacketByteBufs.create();
+        buffer.writeBytes(request.toByteArray());
+        ClientPlayNetworking.send(BODY_VIEW_REQUEST, buffer);
+    }
+
+    private void bindFabricGathering() {
+        // 不把缺少必装宿主误表示为只读或等待能力。
         if (!ClientPlayNetworking.canSend(HOST_GATHERING_REQUEST)) {
-            return false;
+            throw new IllegalStateException(UiErrors.REQUIRED_HOST_CHANNEL + HOST_GATHERING_REQUEST);
         }
         bindGathering(request -> {
             // 操作参数来自 UI，身份、时间、摄入量和配方能力仍由逻辑服务器决定。
@@ -384,7 +485,6 @@ public final class BodyUiModule implements ClientModule {
             buffer.writeBytes(request.toByteArray());
             ClientPlayNetworking.send(HOST_GATHERING_REQUEST, buffer);
         });
-        return true;
     }
 
     @Override
@@ -396,6 +496,7 @@ public final class BodyUiModule implements ClientModule {
     private void clearBody() {
         // 未建立 Inventory UI 握手的连接也必须在 Fabric 断线时清除只读投影。
         meridians.clear();
+        OpeningOverlay.clear();
         body = null;
         scene = null;
         panel = null;

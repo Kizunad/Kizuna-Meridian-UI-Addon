@@ -36,7 +36,7 @@ final class ActionRow extends BaseComponent {
         var text = MinecraftClient.getInstance().textRenderer;
         boolean available = enabled.getAsBoolean();
         double ageSeconds = (System.nanoTime() - createdNanos) / 1e9;
-        double glow = .5 + .5 * Math.sin(ageSeconds * Math.PI / 2);
+        double glow = EffectSettings.reducedMotion() ? .5 : .5 + .5 * Math.sin(ageSeconds * Math.PI / 2);
         if (available) {
             for (int inset = 0; inset < 3; inset++) {
                 int alpha = (int) ((12 + 15 * glow) / (inset + 1));

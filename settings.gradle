@@ -6,16 +6,6 @@ pluginManagement {
     }
 }
 
-// 演示装配可以加载具体生物资源，生产 UI 本身仍不依赖 Human。
-if (providers.gradleProperty('humanAddonDir').isPresent()) {
-    includeBuild(providers.gradleProperty('humanAddonDir').get()) {
-        dependencySubstitution {
-            substitute module('local.meridian-human:client') using project(':client')
-            substitute module('local.meridian-human:server') using project(':server')
-        }
-    }
-}
-
 rootProject.name = 'kizuna-meridian-ui-addon'
 include 'client', 'server'
 

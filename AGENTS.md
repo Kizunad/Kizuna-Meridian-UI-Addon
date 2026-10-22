@@ -1,13 +1,14 @@
 # 仓库协作约定
 
-- 这是独立的 Kizuna's Meridian UI Addon，负责经脉操作界面与宿主桥接。面向框架通用身体数据，不内置人体构型，不强制依赖 Human Addon。
+- 这是独立的 Kizuna's Meridian UI Addon，负责经脉操作界面与宿主桥接。面向框架通用身体数据，不内置人体构型；人体客户端表现由运行时必需的 Human-UI 接线提供。
+- Meridian 的 Framework、Human、UI、Items、Vanilla-Damage、Vanilla-Healing、Human-UI、Progression 和 Kizuna-Players-Animation 在各自适用端均为整套必装模块；拆仓仅用于代码管理与职责划分。不得添加缺少某个 Addon 时的替代路径、降级、可选依赖判断或对应测试/smoke；缺少必需接线应明确报错。运行时必装不意味着跨越客户端/服务端边界或让底层源码依赖具体人体实现。
 - 必须同时依赖 Meridian Mod Framework 与 Kizuna Inventory UI Framework。客户端使用前者的协议与后者的窗口 API；服务端使用前者的权威核心与后者的公共路由，两端依赖保持隔离。
 - 沟通、文档与说明性注释使用简体中文，公开标识符使用英文。可读性优先，复杂业务按读取、校验、计算、请求、结果的顺序展开，简单查找可用 Stream。
 - 新增或修改函数、方法和构造器必须有内部中文意图注释，解释关键原因与约束；不要机械翻译代码或罗列无关的未实现功能。
 - 工程分为 `client/` 与 `server/`。客户端仅保存展示状态与编辑草稿；服务端负责对接宿主认证和框架请求处理器，权威身体计算仍由经脉框架执行。
 - 跨端与跨语言通信复用框架 `.proto` 的 protoc 生成消息。不要复制框架协议、生成类或身体模型，不另建 JSON 通信。新增通信语义先定义唯一 Protobuf 契约。
 - 客户端不得依赖服务端实现，服务器产物不得引入 Minecraft 客户端、owo 或渲染类。单机也使用权威请求路径，不在 UI 中直接修改身体资源。
-- 界面采用 XML + owo-ui 路线，通过 Inventory UI Framework 的公开窗口 API 接入；3D 内景属于另一个可选 Addon。
+- 界面采用 XML + owo-ui 路线，通过 Inventory UI Framework 的公开窗口 API 接入；3D 内景属于另一个独立 Addon。
 - 器官、组织、经脉和配方列表来自内容与权威数据；布局不写死人类左右部位、器官名称或经脉数量。
 - 剪影、骨架、肌肉、器官模型及经脉空间位置由生物附属提供，UI 只实现通用分层、选取、高亮、聚焦及权威信息展示。使用框架 presentation.proto，禁止在 UI 内维护人体坐标表。
 - 失败码复用框架 Protobuf，界面解释和异常文案集中管理，不以解析异常字符串驱动业务。
