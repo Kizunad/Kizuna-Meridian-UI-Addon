@@ -21,7 +21,7 @@ public final class UiErrors {
     }
     public static final String TUTORIAL_SAVE = "无法保存吐纳指引已读偏好";
     public static final String GATHERING_UNAVAILABLE = "聚气连接不可用，请重新连接或刷新。";
-    public static final String GATHERING_LOCKED = "还没读过「聚气残卷」。去找到「聚气残卷」，右键读完，就能吐纳聚气和「自动吐纳」。";
+    public static final String GATHERING_LOCKED = "还没使用过「聚气残卷」。找到后右键一次，就能吐纳聚气和「自动吐纳」，无须看完。";
     public static final String BREATHING_UNAVAILABLE = "服务器尚未提供吐纳能力，请检查生物附属的宿主接入。";
     public static final String OPENING_UNAVAILABLE = "宿主尚未提供此经脉的开拓规则或操作连接。";
     public static final String OPENING_TIMEOUT = "操作回执尚未到达，请查看最新状态后再试。";

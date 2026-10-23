@@ -1,6 +1,6 @@
 # 构建与依赖
 
-内观新增必需的 `MeridianSceneExtension` 客户端接线，提供标题、锁定原因、组件、快照更新、按键优先权与关窗清理。Human-UI负责人体玩法；`BodyCanvas.effects`只投影模型空间实线圆环（`Marker` 的半径与线宽均为屏幕像素，颜色含义由附属决定）和光团颜色。修炼页的独立练习入口（`meridian_ui:practice`）要求札记权限且 `lockedReason()` 为空；未解锁时从菜单隐藏，直接打开也被拒绝。窗口工厂再次校验，保留统一锁形提示卡（`LockedNotice`）用于锁定提示；撤权关闭已有窗口并停止活动。吐纳入口独立要求聚气卷，经脉入口要求札记，读完对应残卷才显示相应菜单项。练习控件固定占场景底部 144 逻辑像素。`QiTransit.circuit` 按整圈线路和权威工作进度显示，普通运输仍按单段到达插值。不会通过 Framework 通用协议传人体坐标。
+内观新增必需的 `MeridianSceneExtension` 客户端接线，提供标题、锁定原因、组件、快照更新、按键优先权与关窗清理。Human-UI负责人体玩法；`BodyCanvas.effects`只投影模型空间实线圆环（`Marker` 的半径与线宽均为屏幕像素，颜色含义由附属决定）和光团颜色。修炼页的独立练习入口（`meridian_ui:practice`）要求札记权限且 `lockedReason()` 为空；未解锁时从菜单隐藏，直接打开也被拒绝。窗口工厂再次校验，保留统一锁形提示卡（`LockedNotice`）用于锁定提示；撤权关闭已有窗口并停止活动。吐纳入口独立要求聚气卷，经脉入口要求札记，真实右键对应残卷并收到权威同步后显示相应菜单项，无须看完。练习控件固定占场景底部 144 逻辑像素。`QiTransit.circuit` 按整圈线路和权威工作进度显示，普通运输仍按单段到达插值。不会通过 Framework 通用协议传人体坐标。
 
 经脉操作卡扩展需要 Framework 当前源码的 `operation_ui.proto`，吐纳到货累计需要 `BreathingView.stored_qi`。这些是工作区契约变更，运行时须同步更新 Framework、Human Fabric 和 UI，不能只替换 UI JAR。多 Addon 的注册、更新、请求和卸载见[经脉操作卡](Meridian-Opening.md)。
 
