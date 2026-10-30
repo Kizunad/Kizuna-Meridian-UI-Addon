@@ -13,6 +13,6 @@ python3 "scripts/check_docs.py"
 
 游戏内整体验收在 `Kizuna-Meridian-Human-UI-Addon` 的整合服 smoke（`./gradlew :client:runSmoke`）中运行，见[构建与验收](docs/wiki/Integration.md)。
 
-默认使用同级 `Kizuna-Meridian-Mod-Framework` 与 `Kizuna-Inventory-UI-Framework`；路径可分别通过 `-PmeridianFrameworkDir` 和 `-PinventoryUiFrameworkDir` 指定。Inventory UI 必须包含服务端路由子项目，详见构建文档。
+相邻仓库位置与产物路径由 Framework 的 `scripts/workspace.gradle` 按装配清单提供，默认在同级目录；单个仓库可用 `-Pkizuna.dir.<清单 id>` 改指（如 `-Pkizuna.dir.framework`、`-Pkizuna.dir.inventory-ui`）。Inventory UI 必须包含服务端路由子项目，详见构建文档。
 
 许可：PolyForm Noncommercial 1.0.0，见 [LICENSE](LICENSE)。

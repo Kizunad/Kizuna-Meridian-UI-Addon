@@ -12,7 +12,7 @@ Human-UI 是客户端必需运行依赖：`fabric.mod.json` 声明 `meridian_hum
 
 ## 本地构建
 
-需要 Java 17、八个同级 Meridian/Animation 仓库，以及 Inventory UI、BS3D 的已构建产物。默认目录关系示例：
+产物以 Java 17 编译；Loom 1.13.6 要求运行 Gradle 的 JDK 为 21 及以上。需要八个同级 Meridian/Animation 仓库，以及 Inventory UI、BS3D 的已构建产物。settings 应用 Framework 的 `scripts/workspace.gradle`：Framework、Inventory UI、Players-Animation 与 Progression client/shared 以源码组合，编译使用上游 named 开发 JAR 并随本仓先行构建，开发运行由完整装配按替换坐标装入；Human client 等只在运行时需要的产物按装配清单读取已构建 JAR。默认目录关系示例：
 
 打坐预览通过 `modImplementation` 直接依赖同级 `Kizuna-Players-Animation` 的公开 API。`BreathingCanvas` 和 `MeditationAvatar` 不判断安装状态、不反射调用。吐纳要求动画侧已加载模型及 `meditate`，缺资源明确报错。当前动画 JAR 已包含双体型骨架与八段动画，2026-10-21 WN 验收直接使用 JAR 内资源；开发装配同样无需外置 `93f8b5b` 补丁资源包。预览按真实玩家选择 classic/slim；外世界同步由 Human 服务端调度，预览播放不作为外世界同步成功的依据。
 
@@ -23,17 +23,17 @@ Code/
 └── Kizuna-Meridian-UI-Addon/
 ```
 
-先在 Inventory UI Framework 目录运行 `./gradlew build`，生成可由 Loom 重映射的客户端 JAR；之后在 UI Addon 目录运行：
+在 UI Addon 目录运行：
 
 ```bash
 ./gradlew build
 python3 "scripts/check_docs.py"
 ```
 
-框架不在同级时分别指定路径：
+相邻仓库不在同级时按清单 id 分别指定路径（`-PkizunaCodeDir` 整体改指代码根目录）：
 
 ```bash
-./gradlew -PmeridianFrameworkDir="/path/to/Kizuna-Meridian-Mod-Framework" -PinventoryUiFrameworkDir="/path/to/Kizuna-Inventory-UI-Framework" build
+./gradlew -Pkizuna.dir.framework="/path/to/Kizuna-Meridian-Mod-Framework" -Pkizuna.dir.inventory-ui="/path/to/Kizuna-Inventory-UI-Framework" build
 ```
 
 Windows 对应使用 `gradlew.bat`。Gradle Wrapper 包含分发校验和，源码编译目标为 Java 17。

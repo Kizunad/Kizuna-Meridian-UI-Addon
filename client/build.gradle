@@ -4,35 +4,29 @@ plugins {
 
 description = '通用身体模型、分层选择与状态展示。'
 
-def inventoryDirectory = rootProject.file(providers.gradleProperty('inventoryUiFrameworkDir')
-        .getOrElse('../Kizuna-Inventory-UI-Framework'))
-def inventoryJar = new File(inventoryDirectory, 'build/libs/kizuna-inventory-ui-framework-0.1.0-SNAPSHOT.jar')
-def animationDirectory = rootProject.file('../Kizuna-Players-Animation')
-def animationJar = new File(animationDirectory, 'build/libs/kizuna-players-animation-0.1.0-SNAPSHOT.jar')
-if (!inventoryJar.isFile()) {
-    throw new GradleException('请先在 Inventory UI Framework 仓库运行 ./gradlew build，生成可重映射的客户端 JAR。')
-}
-
 dependencies {
     // 经脉消息与窗口 API 都是必需编译依赖，运行时由宿主提供对应框架。
     implementation 'local.meridian:client'
-    minecraft 'com.mojang:minecraft:1.20.1'
-    mappings 'net.fabricmc:yarn:1.20.1+build.10:v2'
-    modImplementation 'net.fabricmc:fabric-loader:0.16.10'
-    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.92.3+1.20.1'
-    modImplementation 'io.wispforest:owo-lib:0.11.2+1.20'
-    // Loom 将已构建框架映射到开发命名；不把框架内嵌进 UI 附属。
-    modImplementation files(inventoryJar)
+    minecraft libs.minecraft
+    mappings "net.fabricmc:yarn:${libs.versions.yarn.get()}:v2"
+    modImplementation libs.fabric.loader
+    modImplementation libs.fabric.api
+    modImplementation libs.owo
+    // 组合进来的 Loom 模组编译取 named 开发 JAR（上游随本仓先行构建），不把框架内嵌进 UI 附属；
+    // 开发运行由完整装配按替换坐标装入，这里不再声明第二份。
+    compileOnly('local.inventory-ui:client') { targetConfiguration = 'namedElements' }
     // 预览直接使用必装动画模组的公开 API。
-    modImplementation files(animationJar)
-    modImplementation files('../../Kizuna-Meridian-Progression-Addon/client/build/libs/kizuna-meridian-progression-addon-client-0.1.0-SNAPSHOT.jar')
-    implementation files('../../Kizuna-Meridian-Progression-Addon/shared/build/libs/kizuna-meridian-progression-addon-shared-0.1.0-SNAPSHOT.jar')
-    testImplementation 'junit:junit:4.13.2'
-    // Loom 开发运行不展开宿主 JAR 的嵌套资源模组，显式装配必需人体展示包。
-    localRuntime files('../../Kizuna-Meridian-Human-Addon/client/build/libs/kizuna-meridian-human-addon-client-0.1.0-SNAPSHOT.jar')
+    compileOnly('dev.kizuna:kizuna-players-animation') { targetConfiguration = 'namedElements' }
+    compileOnly('local.progression:client') { targetConfiguration = 'namedElements' }
+    implementation 'local.progression:shared'
+    testImplementation libs.junit4
+    // 单元测试直接使用 Inventory UI 类型，测试类路径单独补上同一份 named JAR。
+    testImplementation('local.inventory-ui:client') { targetConfiguration = 'namedElements' }
+    // Loom 开发运行不展开宿主 JAR 的嵌套资源模组，显式装配必需人体展示包；Human 在本仓之上，只在运行时按清单读文件。
+    localRuntime files(kizunaWorkspace.artifact('human', 'client', false))
     localRuntime 'local.meridian:server'
-    localRuntime 'org.tomlj:tomlj:1.1.1'
-    localRuntime 'org.antlr:antlr4-runtime:4.11.1'
+    localRuntime libs.tomlj
+    localRuntime libs.antlr.runtime
 }
 
 test { useJUnit() }
@@ -42,7 +36,7 @@ processResources {
 }
 
 // 开发运行固定使用完整装配；游戏内整体验收在 Human-UI 的整合服 smoke 中执行。
-apply from: '../../Kizuna-Meridian-Mod-Framework/scripts/full-assembly.gradle'
+apply from: new File(kizunaWorkspace.directory('framework'), 'scripts/full-assembly.gradle')
 loom {
     mods {
         'meridian_ui' { sourceSet sourceSets.main }
@@ -70,7 +64,7 @@ loom {
     }
 }
 tasks.register("prepareInnerVisionWorld", Copy) {
-    from "../../Kizuna-Meridian-Progression-Addon/fabric/build/gametest/world"
+    from new File(kizunaWorkspace.directory('progression'), 'fabric/build/gametest/world')
     into layout.buildDirectory.dir("inner-vision-test/saves/inner-vision-test")
     exclude "session.lock"
 }

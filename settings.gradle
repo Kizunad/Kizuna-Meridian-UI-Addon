@@ -6,25 +6,17 @@ pluginManagement {
     }
 }
 
+// 相邻仓库位置、产物路径与第三方版本都由 Framework 的工作区脚本提供（kizunaWorkspace、libs）。
+apply from: new File(rootDir.parentFile, 'Kizuna-Meridian-Mod-Framework/scripts/workspace.gradle')
+
 rootProject.name = 'kizuna-meridian-ui-addon'
 include 'client', 'server'
 
 // 框架尚未发布 Maven 产物，直接组合独立仓库构建以复用其唯一协议源。
-def frameworkDirectory = providers.gradleProperty('meridianFrameworkDir')
-        .getOrElse('../Kizuna-Meridian-Mod-Framework')
-includeBuild(frameworkDirectory) {
-    dependencySubstitution {
-        substitute module('local.meridian:client') using project(':client')
-        substitute module('local.meridian:server') using project(':server')
-    }
-}
-
+kizunaWorkspace.includeSource('framework', [client: 'local.meridian:client', server: 'local.meridian:server'])
 // 窗口与公共路由使用各自的框架项目，避免服务端依赖客户端渲染代码。
-def inventoryUiDirectory = providers.gradleProperty('inventoryUiFrameworkDir')
-        .getOrElse('../Kizuna-Inventory-UI-Framework')
-includeBuild(inventoryUiDirectory) {
-    dependencySubstitution {
-        substitute module('local.inventory-ui:client') using project(':')
-        substitute module('local.inventory-ui:server') using project(':server')
-    }
-}
+kizunaWorkspace.includeSource('inventory-ui', ['': 'local.inventory-ui:client', server: 'local.inventory-ui:server'])
+// 预览直接使用必装动画模组；替换键与其他仓一致，用动画工程自身的 group 与工程名。
+kizunaWorkspace.includeSource('players-animation', ['': 'dev.kizuna:kizuna-players-animation'])
+// 同一仓库被多处组合时只采用最先登记的替换规则；Progression 会再组合 Inventory UI，必须排在其后。
+kizunaWorkspace.includeSource('progression', [client: 'local.progression:client', shared: 'local.progression:shared'])
