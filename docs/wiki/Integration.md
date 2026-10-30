@@ -49,7 +49,7 @@ Windows 对应使用 `gradlew.bat`。Gradle Wrapper 包含分发校验和，源�
 
 客户端经脉消息用 `implementation` 参与开发运行，Inventory UI 客户端通过 Loom `modImplementation files(...)` 接入已构建 JAR，以完成 Minecraft 命名重映射；服务端仍使用两项 `compileOnlyApi`。均不内嵌框架。实际宿主须提供匹配的两个框架及各自运行依赖。客户端不依赖经脉服务端核心，服务端不依赖 Inventory UI 客户端或 owo。
 
-`local.meridian:client/server` 与 `local.inventory-ui:client/server` 只是 Gradle composite build 的本地依赖替换键，不是已经发布的 Maven 坐标。配置引用实际 checkout，不自动拉取或锁定远端提交，也不复制源码到本仓库。
+`local.meridian:client/server` 只是 Gradle composite build 的本地依赖替换键，不是已经发布的 Maven 坐标；Inventory UI 与玩家动画的替换键用各自工程的 group 与工程名，与其他仓的登记一致，同样不代表已发布。配置引用实际 checkout，不自动拉取或锁定远端提交，也不复制源码到本仓库。
 
 经脉框架展示协议基线为 `bc7cdfc`；当前聚气接入还需要同目录工作区新增的 `gathering.proto` 与 `GatheringSession`，单独检出该展示基线不足以构建本轮代码。Inventory UI 必须使用包含 `server/` 公共路由的源码版本；本次接入使用本地 `1a184a6` 加未提交的服务端模块改动，单独检出 `1a184a6` 不足以构建本附属。这些改动属于 Inventory UI 仓库，尚未由本附属提交或发布。
 
