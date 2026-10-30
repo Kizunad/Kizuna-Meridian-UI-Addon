@@ -6,6 +6,7 @@ import dev.kizuna.inventoryui.client.ClientRuntime;
 import dev.kizuna.inventoryui.registry.FrameworkCatalog;
 import dev.kizuna.inventoryui.window.UiWindowDefinition;
 import dev.kizuna.inventoryui.window.UiWindowManager.WindowKey;
+import dev.kizuna.inventoryui.window.UiWindowManager.WindowState;
 import dev.kizuna.meridian.progression.client.ClientProgression;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
 import dev.kizuna.meridian.protocol.pb.GatheringMessages.*;
@@ -19,6 +20,7 @@ import dev.kizuna.meridian.protocol.pb.MeridianMessages.ResponseEnvelope;
 import dev.kizuna.inventoryui.protocol.UiMessageRouter;
 import dev.kizuna.inventoryui.protocol.UiWire;
 import io.wispforest.owo.ui.component.Components;
+import io.wispforest.owo.ui.core.Component;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -36,6 +38,8 @@ import java.util.function.Consumer;
 public final class BodyUiModule implements ClientModule {
     private static final Identifier BODY_VIEW_REQUEST = new Identifier("meridian", "body_view_request");
     private ClientRuntime runtime;
+    private WindowKey bodyKey;
+    private boolean bodyLocked;
     private WindowKey cultivationKey;
     private boolean cultivationLocked;
     private static final Identifier HOST_GATHERING_REQUEST = new Identifier("meridian", "gathering_request");
@@ -141,20 +145,7 @@ public final class BodyUiModule implements ClientModule {
                 "meridian_ui:gathering_response", 1, UiMessageRouter.Direction.SERVER_TO_CLIENT,
                 GatheringResponse.class, this::receiveGathering), UiWire.Codec.protobuf(GatheringResponse.getDefaultInstance()), false));
         // 没有宿主数据时显示等待状态，不偷偷生成默认人体。
-        bindings.window("meridian_ui:body_window", (runtime, window) -> {
-            if (scene == null || body == null) {
-                return Components.label(Text.literal(UiErrors.MISSING_BODY));
-            }
-            panel = new BodyPanel(scene, body);
-            BodyPanel opened = panel;
-            window.scope().addCleanup(() -> {
-                opened.canvas().dispose();
-                if (panel == opened) {
-                    panel = null;
-                }
-            });
-            return panel.root();
-        });
+        bindings.window("meridian_ui:body_window", (runtime, window) -> createBodyWindow(window));
         bindings.window("meridian_ui:cultivation_window", (runtime, window) -> {
             // 内观模型仍由生物附属提供；没有身体时只显示等待状态。
             ClientProgression.requireCultivation();
@@ -190,6 +181,33 @@ public final class BodyUiModule implements ClientModule {
             refreshGathering();
             return cultivationPanel.root();
         });
+    }
+
+    private Component createBodyWindow(WindowState window) {
+        // 整个检视窗口受内观卷授权；锁定通知也记录窗口，进度变化后及时关闭。
+        WindowKey openedKey = window.key();
+        bodyKey = openedKey;
+        bodyLocked = !ClientProgression.canInspect();
+        window.scope().addCleanup(() -> {
+            if (bodyKey == openedKey) {
+                bodyKey = null;
+            }
+        });
+        if (bodyLocked) {
+            return new LockedNotice("内观", UiErrors.INNER_VISION_LOCKED);
+        }
+        if (scene == null || body == null) {
+            return Components.label(Text.literal(UiErrors.MISSING_BODY));
+        }
+        panel = new BodyPanel(scene, body);
+        BodyPanel opened = panel;
+        window.scope().addCleanup(() -> {
+            opened.canvas().dispose();
+            if (panel == opened) {
+                panel = null;
+            }
+        });
+        return panel.root();
     }
 
     private void receiveBodyView(byte[] payload) {
@@ -432,6 +450,9 @@ public final class BodyUiModule implements ClientModule {
 
     private void progressChanged() {
         // 进度是连接权威投影；重置通知立即清窗口与尚未发出的控制意图。
+        if (runtime != null && bodyKey != null && ClientProgression.canInspect() == bodyLocked) {
+            runtime.workspace().windows().close(bodyKey);
+        }
         if (!ClientProgression.canCultivate()) {
             revokeCultivation();
         }
@@ -467,8 +488,12 @@ public final class BodyUiModule implements ClientModule {
         if (!ClientPlayNetworking.canSend(BODY_VIEW_REQUEST)) {
             throw new IllegalStateException(UiErrors.REQUIRED_HOST_CHANNEL + BODY_VIEW_REQUEST);
         }
-        var request = BodyViewRequest.newBuilder().setProtocolVersion(1).setRequestId(UUID.randomUUID().toString())
-                .setBodyId(body.getId()).setIntrospection(ClientProgression.canCultivate()).build();
+        var request = BodyViewRequest.newBuilder()
+                .setProtocolVersion(1)
+                .setRequestId(UUID.randomUUID().toString())
+                .setBodyId(body.getId())
+                .setIntrospection(ClientProgression.canInspect())
+                .build();
         var buffer = PacketByteBufs.create();
         buffer.writeBytes(request.toByteArray());
         ClientPlayNetworking.send(BODY_VIEW_REQUEST, buffer);
@@ -500,6 +525,7 @@ public final class BodyUiModule implements ClientModule {
         body = null;
         scene = null;
         panel = null;
+        bodyKey = null;
         cultivationPanel = null;
         gathering = null;
         gatheringSender = null;

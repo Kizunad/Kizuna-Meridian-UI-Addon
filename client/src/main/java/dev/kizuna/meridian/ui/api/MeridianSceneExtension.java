@@ -10,6 +10,7 @@ public interface MeridianSceneExtension {
     String ENTRYPOINT = "meridian_ui_scene";
     String title();
     String lockedReason();
+    String bodySummary(BodySnapshot body);
     Session create(BodyScene scene, BodyCanvas canvas);
 
     static MeridianSceneExtension required() {

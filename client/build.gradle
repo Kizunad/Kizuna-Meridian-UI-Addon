@@ -28,6 +28,11 @@ dependencies {
     modImplementation files('../../Kizuna-Meridian-Progression-Addon/client/build/libs/kizuna-meridian-progression-addon-client-0.1.0-SNAPSHOT.jar')
     implementation files('../../Kizuna-Meridian-Progression-Addon/shared/build/libs/kizuna-meridian-progression-addon-shared-0.1.0-SNAPSHOT.jar')
     testImplementation 'junit:junit:4.13.2'
+    // Loom 开发运行不展开宿主 JAR 的嵌套资源模组，显式装配必需人体展示包。
+    localRuntime files('../../Kizuna-Meridian-Human-Addon/client/build/libs/kizuna-meridian-human-addon-client-0.1.0-SNAPSHOT.jar')
+    localRuntime 'local.meridian:server'
+    localRuntime 'org.tomlj:tomlj:1.1.1'
+    localRuntime 'org.antlr:antlr4-runtime:4.11.1'
 }
 
 test { useJUnit() }
@@ -41,5 +46,43 @@ apply from: '../../Kizuna-Meridian-Mod-Framework/scripts/full-assembly.gradle'
 loom {
     mods {
         'meridian_ui' { sourceSet sourceSets.main }
+    }
+}
+
+// 内观授权在隔离的完整装配客户端中验收，测试入口不进入发布产物。
+sourceSets {
+    clientTest {
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+    }
+}
+loom {
+    mods {
+        meridian_ui_inner_vision_test { sourceSet sourceSets.clientTest }
+    }
+    runs {
+        innerVisionTest {
+            client()
+            source sourceSets.clientTest
+            runDir "build/inner-vision-test"
+            programArgs "--quickPlaySingleplayer", "inner-vision-test", "--width", "1280", "--height", "960"
+        }
+    }
+}
+tasks.register("prepareInnerVisionWorld", Copy) {
+    from "../../Kizuna-Meridian-Progression-Addon/fabric/build/gametest/world"
+    into layout.buildDirectory.dir("inner-vision-test/saves/inner-vision-test")
+    exclude "session.lock"
+}
+tasks.named("runInnerVisionTest") {
+    dependsOn tasks.named("prepareInnerVisionWorld")
+    def report = layout.buildDirectory.file("inner-vision-results.txt")
+    doFirst {
+        report.get().asFile.text = "success=false\n"
+    }
+    doLast {
+        if (!report.get().asFile.text.startsWith("success=true")) {
+            throw new GradleException("内观客户端验收失败：${report.get().asFile}")
+        }
     }
 }

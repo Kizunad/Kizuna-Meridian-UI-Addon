@@ -2,7 +2,9 @@ package dev.kizuna.meridian.ui.client;
 
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
 import dev.kizuna.inventoryui.client.component.ResponsiveLayout;
-import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
+import dev.kizuna.meridian.ui.api.MeridianSceneExtension;
+import dev.kizuna.meridian.protocol.pb.PresentationMessages.BodyVisual;
+import dev.kizuna.meridian.protocol.pb.PresentationMessages.PresentationLayer;
 import dev.kizuna.meridian.progression.client.ClientProgression;
 import io.wispforest.owo.ui.component.LabelComponent;
 import io.wispforest.owo.ui.container.FlowLayout;
@@ -29,6 +31,7 @@ public final class BodyPanel {
     private static final int TOGGLE_HEIGHT = 27;
     private static final int TOGGLE_GAP = 4;
     private final BodyScene scene;
+    private final MeridianSceneExtension extension = MeridianSceneExtension.required();
     private BodySnapshot body;
     private final FlowLayout root;
     private final FlowLayout content;
@@ -122,7 +125,7 @@ public final class BodyPanel {
 
     public void layer(String id) {
         // 宿主可以指定单层初始视图；玩家的勾选操作使用独立增删入口。
-        if (!id.equals(scene.defaultLayerId()) && !ClientProgression.canCultivate()) {
+        if (!id.equals(scene.defaultLayerId()) && !ClientProgression.canInspect()) {
             return;
         }
         visibleLayers.clear();
@@ -133,7 +136,7 @@ public final class BodyPanel {
 
     public void setLayerVisible(String id, boolean enabled) {
         // 勾选只影响渲染集合；相机、各层坐标和其他开关不会随之改变。
-        if (enabled && !id.equals(scene.defaultLayerId()) && !ClientProgression.canCultivate()) {
+        if (enabled && !id.equals(scene.defaultLayerId()) && !ClientProgression.canInspect()) {
             return;
         }
         if (scene.presentation().getLayersList().stream().noneMatch(layer -> layer.getId().equals(id))) {
@@ -174,11 +177,14 @@ public final class BodyPanel {
 
     private void showInformation() {
         // 普通状态更新只替换文字，让玩家已调整的镜头与选择保持稳定。
+        String summary = extension.bodySummary(body) + "\n\n";
         if (selected == null) {
-            information.text(Text.literal("检视\n\n点击体表查看部位介绍、血量与状态。\n\n可切换渲染层查看内部。\n外层会自然遮挡内部，取消勾选即可逐层查看。"));
+            String instructions = "检视\n\n点击体表查看部位介绍、血量与状态。\n\n可切换渲染层查看内部。\n"
+                    + "外层会自然遮挡内部，取消勾选即可逐层查看。";
+            information.text(Text.literal(summary + instructions));
             return;
         }
-        information.text(Text.literal(String.join("\n", BodyInformation.lines(body, selected))));
+        information.text(Text.literal(summary + String.join("\n", BodyInformation.lines(body, selected))));
     }
 
     public void select(BodyVisual node) {
