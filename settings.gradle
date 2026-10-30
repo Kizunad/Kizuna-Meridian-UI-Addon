@@ -15,9 +15,9 @@ include 'client', 'server'
 // 框架尚未发布 Maven 产物，直接组合独立仓库构建以复用其唯一协议源。
 kizunaWorkspace.includeSource('framework', [client: 'local.meridian:client', server: 'local.meridian:server'])
 // 窗口与公共路由使用各自的框架项目，避免服务端依赖客户端渲染代码。
-// Inventory UI 的替换键用其工程自身的 group 与工程名，与 Human 等仓的登记一致：同一仓库在嵌套组合里只按最先登记的规则替换，键不一致时另一方解析不到。
+// 替换键一律用各工程自身的 group 与工程名，与 Human 等仓的登记一致：同一仓库在嵌套组合里只按最先登记的规则替换，键不一致时另一方解析不到。
 kizunaWorkspace.includeSource('inventory-ui', ['': 'dev.kizuna.inventoryui:kizuna-inventory-ui-framework', server: 'dev.kizuna.inventoryui:server'])
 // 预览直接使用必装动画模组；替换键与其他仓一致，用动画工程自身的 group 与工程名。
 kizunaWorkspace.includeSource('players-animation', ['': 'dev.kizuna:kizuna-players-animation'])
 // 同一仓库被多处组合时只采用最先登记的替换规则；Progression 会再组合 Inventory UI，必须排在其后。
-kizunaWorkspace.includeSource('progression', [client: 'local.progression:client', shared: 'local.progression:shared'])
+kizunaWorkspace.includeSource('progression', [client: 'dev.kizuna.meridian.progression:client', shared: 'dev.kizuna.meridian.progression:shared'])

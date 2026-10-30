@@ -17,8 +17,8 @@ dependencies {
     compileOnly('dev.kizuna.inventoryui:kizuna-inventory-ui-framework') { targetConfiguration = 'namedElements' }
     // 预览直接使用必装动画模组的公开 API。
     compileOnly('dev.kizuna:kizuna-players-animation') { targetConfiguration = 'namedElements' }
-    compileOnly('local.progression:client') { targetConfiguration = 'namedElements' }
-    implementation 'local.progression:shared'
+    compileOnly('dev.kizuna.meridian.progression:client') { targetConfiguration = 'namedElements' }
+    implementation 'dev.kizuna.meridian.progression:shared'
     testImplementation libs.junit4
     // 单元测试直接使用 Inventory UI 类型，测试类路径单独补上同一份 named JAR。
     testImplementation('dev.kizuna.inventoryui:kizuna-inventory-ui-framework') { targetConfiguration = 'namedElements' }
