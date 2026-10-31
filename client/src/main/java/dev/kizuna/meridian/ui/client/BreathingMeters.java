@@ -1,27 +1,30 @@
 package dev.kizuna.meridian.ui.client;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathingView;
 import dev.kizuna.meridian.protocol.pb.GatheringMessages.GatheringView;
-import io.wispforest.owo.ui.base.BaseComponent;
+import io.wispforest.owo.ui.base.BaseUIComponent;
 import io.wispforest.owo.ui.container.FlowLayout;
-import io.wispforest.owo.ui.core.Component;
+import io.wispforest.owo.ui.core.UIComponent;
 import io.wispforest.owo.ui.core.Insets;
-import io.wispforest.owo.ui.core.OwoUIDrawContext;
+import io.wispforest.owo.ui.core.OwoUIGraphics;
 import io.wispforest.owo.ui.core.Positioning;
 import io.wispforest.owo.ui.core.Sizing;
 import java.util.List;
 import java.util.Locale;
 import net.minecraft.client.Minecraft;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.ARGB;
 
 /** 场景内的资源控件；每个控件独立命中，空白处仍交给三维相机与气息操作。 */
 final class BreathingMeters {
-    private static final ResourceLocation LUNGS = new ResourceLocation("meridian_ui", "textures/gui/lungs.png");
-    private static final ResourceLocation AIR = new ResourceLocation("meridian_ui", "textures/gui/lungs_air.png");
+    private static final Identifier LUNGS = Identifier.fromNamespaceAndPath("meridian_ui", "textures/gui/lungs.png");
+    private static final Identifier AIR = Identifier.fromNamespaceAndPath("meridian_ui", "textures/gui/lungs_air.png");
     private static final int AIR_TOP = 20;
     private static final int AIR_BOTTOM = 54;
+    /** 空气填充的染色：浅蓝、85% 不透明，与肺部轮廓贴图叠加。 */
+    private static final int AIR_TINT = ARGB.colorFromFloat(.85f, .47f, .77f, .93f);
     static final int COMPACT_WIDTH = 420;
     private final AirGauge air = new AirGauge();
     private final ReserveGauge reserve = new ReserveGauge();
@@ -40,11 +43,11 @@ final class BreathingMeters {
         qi.margins(Insets.of(0, 12, 0, 12));
 
         // 按钮位于底部操作提示上方；直接挂载各控件，保留场景空白处的鼠标输入。
+        // 各控件晚于画布加入，按子组件顺序绘制在画布之上（owo 0.13 已无 zIndex）。
         action.sizing(Sizing.fixed(120), Sizing.fixed(30));
         action.positioning(Positioning.relative(50, 100));
         action.margins(Insets.bottom(34));
-        for (Component control : List.of(reserve, air, action, qi)) {
-            control.zIndex(1);
+        for (UIComponent control : List.of(reserve, air, action, qi)) {
             scene.child(control);
         }
     }
@@ -120,7 +123,7 @@ final class BreathingMeters {
         action.tooltip(net.minecraft.network.chat.Component.literal(feedback));
     }
 
-    private final class AirGauge extends BaseComponent {
+    private final class AirGauge extends BaseUIComponent {
         private double shownRatio;
         private long frameNanos;
 
@@ -131,7 +134,7 @@ final class BreathingMeters {
         }
 
         @Override
-        public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
+        public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
             // 内部掩码限制蓝色填充，保持边框和外部透明；插值只改变展示高度。
             long now = System.nanoTime();
             double seconds = frameNanos == 0 ? 0 : Math.min(.1, (now - frameNanos) / 1e9);
@@ -142,22 +145,19 @@ final class BreathingMeters {
             // 填充从肺底升到肺顶，透明外边距不计入空气量的显示高度。
             int fillHeight = (int) Math.round((AIR_BOTTOM - AIR_TOP) * Math.max(0, Math.min(1, shownRatio)));
             int fillTop = AIR_BOTTOM - fillHeight;
-            context.blit(LUNGS, left, y, 0, 0, 64, 64, 64, 64);
-            context.flush();
-            RenderSystem.enableBlend();
-            RenderSystem.setShaderColor(.47f, .77f, .93f, .85f);
+            context.blit(RenderPipelines.GUI_TEXTURED, LUNGS, left, y, 0, 0, 64, 64, 64, 64);
             if (fillHeight > 0) {
-                context.blit(AIR, left, y + fillTop, 0, fillTop, 64, fillHeight, 64, 64);
+                // 染色写进顶点颜色，只作用于这一次填充。
+                context.blit(RenderPipelines.GUI_TEXTURED, AIR, left, y + fillTop, 0, fillTop, 64, fillHeight, 64, 64,
+                        AIR_TINT);
             }
-            context.flush();
-            RenderSystem.setShaderColor(1, 1, 1, 1);
             var font = Minecraft.getInstance().font;
             String caption = String.format(Locale.ROOT, "空气 %.0f%%", ratio * 100);
-            context.drawString(font, caption, x + (width - font.width(caption)) / 2, y + 73, 0xFF8DBBD3, false);
+            context.text(font, caption, x + (width - font.width(caption)) / 2, y + 73, 0xFF8DBBD3, false);
         }
     }
 
-    private final class ReserveGauge extends BaseComponent {
+    private final class ReserveGauge extends BaseUIComponent {
         ReserveGauge() {
             // 黄色条保留原有含义，分别消耗的来源放在悬浮提示。
             sizing(Sizing.fill(64), Sizing.fixed(24));
@@ -165,7 +165,7 @@ final class BreathingMeters {
         }
 
         @Override
-        public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
+        public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
             // 总余力取先耗尽的一项，避免另一项仍高时掩盖实际限制。
             double remainingRatio = breath.getAutomatic() ? breath.getStaminaRatio()
                     : Math.min(breath.getStaminaRatio(), breath.getAttentionRatio());
@@ -173,7 +173,7 @@ final class BreathingMeters {
             // 自动吐纳只看呼吸耐力，标题直接写明，并画出服务端停止线。
             String label = breath.getAutomatic()
                     ? String.format(Locale.ROOT, "呼吸耐力 %.0f%%（不耗精力）", breath.getStaminaRatio() * 100) : "余力";
-            context.drawString(font, font.plainSubstrByWidth(label, width), x, y, 0xFFD5B878, false);
+            context.text(font, font.plainSubstrByWidth(label, width), x, y, 0xFFD5B878, false);
             context.fill(x, y + 16, x + width, y + 20, 0xFF272A26);
             int fillWidth = (int) Math.round(width * Math.max(0, Math.min(1, remainingRatio)));
             context.fill(x, y + 16, x + fillWidth, y + 20, 0xFFD5B878);
@@ -181,13 +181,13 @@ final class BreathingMeters {
                 int stopX = x + (int) Math.round(width * breath.getAutomaticMinimumStaminaRatio());
                 context.fill(stopX, y + 13, stopX + 1, y + 23, 0xFFFF5858);
                 String stop = String.format(Locale.ROOT, "低于%.0f%%自动停", breath.getAutomaticMinimumStaminaRatio() * 100);
-                context.drawString(font, stop, Math.min(x + width - font.width(stop), stopX - font.width(stop) / 2),
+                context.text(font, stop, Math.min(x + width - font.width(stop), stopX - font.width(stop) / 2),
                         y, 0xFFFF8A80, false);
             }
         }
     }
 
-    private final class QiSummary extends BaseComponent {
+    private final class QiSummary extends BaseUIComponent {
         QiSummary() {
             // 整个统计区域都能命中总账提示。
             sizing(Sizing.fixed(136), Sizing.fixed(26));
@@ -195,11 +195,11 @@ final class BreathingMeters {
         }
 
         @Override
-        public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
+        public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
             // 纳入量保留两位，能看出每次小批吐纳的变化。
             var font = Minecraft.getInstance().font;
             String caption = String.format(Locale.ROOT, "纳入 %.2f 真元", breath.getStoredQi());
-            context.drawString(font, font.plainSubstrByWidth(caption, width), x, y + 8, 0xFFA8C8C0, false);
+            context.text(font, font.plainSubstrByWidth(caption, width), x, y + 8, 0xFFA8C8C0, false);
         }
     }
 }

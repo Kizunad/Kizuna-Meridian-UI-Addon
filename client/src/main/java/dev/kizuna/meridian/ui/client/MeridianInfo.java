@@ -1,13 +1,13 @@
 package dev.kizuna.meridian.ui.client;
 
-import io.wispforest.owo.ui.base.BaseComponent;
-import io.wispforest.owo.ui.core.OwoUIDrawContext;
+import io.wispforest.owo.ui.base.BaseUIComponent;
+import io.wispforest.owo.ui.core.OwoUIGraphics;
 import io.wispforest.owo.ui.core.Sizing;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
 /** 标题旁的圆形信息入口，快捷键只在悬浮时显示。 */
-final class MeridianInfo extends BaseComponent {
+final class MeridianInfo extends BaseUIComponent {
     MeridianInfo() {
         // 自绘圆环避免依赖字体是否包含圆形 i，也保持与场景控件一致的外观。
         sizing(Sizing.fixed(18), Sizing.fixed(18));
@@ -15,7 +15,7 @@ final class MeridianInfo extends BaseComponent {
     }
 
     @Override
-    public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
+    public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
         // 小尺寸圆环逐行绘制，只使用现有 UI 图元。
         int centerX = x + width / 2;
         int centerY = y + height / 2;
@@ -30,6 +30,6 @@ final class MeridianInfo extends BaseComponent {
             context.fill(centerX + inner, centerY + offset, centerX + outer + 1, centerY + offset + 1, color);
         }
         var text = Minecraft.getInstance().font;
-        context.drawString(text, "i", centerX - text.width("i") / 2, centerY - 4, color, false);
+        context.text(text, "i", centerX - text.width("i") / 2, centerY - 4, color, false);
     }
 }

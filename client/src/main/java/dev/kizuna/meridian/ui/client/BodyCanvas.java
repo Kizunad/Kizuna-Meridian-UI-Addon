@@ -1,27 +1,25 @@
 package dev.kizuna.meridian.ui.client;
 
-import com.mojang.blaze3d.pipeline.TextureTarget;
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.BufferUploader;
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import com.mojang.blaze3d.vertex.Tesselator;
-import com.mojang.blaze3d.vertex.VertexFormat;
-import com.mojang.blaze3d.vertex.VertexSorting;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
 import dev.kizuna.inventoryui.client.component.ModelPreviewCamera;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
 import dev.kizuna.meridian.ui.api.MeridianRouteProvider;
-import io.wispforest.owo.ui.base.BaseComponent;
-import io.wispforest.owo.ui.core.OwoUIDrawContext;
+import io.wispforest.owo.ui.base.BaseUIComponent;
+import io.wispforest.owo.ui.core.OwoUIGraphics;
 import io.wispforest.owo.ui.core.Sizing;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.world.entity.player.PlayerModelType;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.fabricmc.loader.api.FabricLoader;
-import io.wispforest.owo.ui.util.ScissorStack;
+import org.joml.Matrix3x2f;
 import org.joml.Matrix4f;
+import org.joml.Matrix4fc;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 
@@ -32,8 +30,9 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 /** 通用三角网格画布，复用 Inventory UI 的相机，实现身体对象的精确面选取。 */
-public final class BodyCanvas extends BaseComponent {
+public final class BodyCanvas extends BaseUIComponent {
     private static final int BACKGROUND = 0xFF131F25;
+    private static final int OPENING_BACKGROUND = 0xFF0E1216;
     private static final int SELECTED = 0xF6D888;
     private static final float DEPTH_SCALE = 0.1f;
     private static final double CLICK_DISTANCE_PIXELS = 4;
@@ -54,7 +53,7 @@ public final class BodyCanvas extends BaseComponent {
     private final Map<String, Double> openingProgress = new HashMap<>();
     private final Map<String, Double> storedFraction = new HashMap<>();
     private final Map<String, Float> shownBrightness = new HashMap<>();
-    private TextureTarget openingFramebuffer;
+    private BodySceneRenderer renderer;
     private List<Marker> markers = List.of();
     private int transitColor = 0xFFFFE48A;
 
@@ -87,13 +86,12 @@ public final class BodyCanvas extends BaseComponent {
     }
 
     public void dispose() {
-        // 只有实际看过的对象持有 GPU 缓冲，窗口关闭时统一释放。
+        // 画中画纹理属于本画布，窗口关闭时释放，反复打开不会积累显存。
         disposal.run();
-        meshes.values().forEach(BodyMesh::close);
         meshes.clear();
-        if (openingFramebuffer != null) {
-            openingFramebuffer.destroyBuffers();
-            openingFramebuffer = null;
+        if (renderer != null) {
+            renderer.close();
+            renderer = null;
         }
     }
 
@@ -179,12 +177,11 @@ public final class BodyCanvas extends BaseComponent {
     }
 
     private void refreshAppearance() {
-        // Minecraft 自身管理皮肤加载；臂型变化时才重建几何，普通帧复用原有 GPU 缓冲。
+        // Minecraft 自身管理皮肤加载；臂型变化时才重建几何，普通帧复用已展开的网格。
         Minecraft client = Minecraft.getInstance();
-        boolean currentSlim = client.player != null && "slim".equals(client.player.getModelName());
+        boolean currentSlim = client.player != null && client.player.getSkin().model() == PlayerModelType.SLIM;
         if (currentSlim != slimSkin) {
             slimSkin = currentSlim;
-            meshes.values().forEach(BodyMesh::close);
             meshes.clear();
             rebuildAppearance();
         }
@@ -215,7 +212,7 @@ public final class BodyCanvas extends BaseComponent {
     }
 
     @Override
-    public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
+    public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
         // 镜头和亮度按实际帧间隔插值；节点清单随快照更新，不逐帧运行身体计算。
         refreshAppearance();
         long now = System.nanoTime();
@@ -225,186 +222,166 @@ public final class BodyCanvas extends BaseComponent {
             camera.advance(elapsedSeconds);
         }
         previousFrame = now;
+        // 模型画进画布自己的画中画纹理，独立深度；底色先填，纹理随后按 GUI 顺序叠上，文字和浮窗不受模型深度影响。
+        BodySceneRenderer.Scene scene;
         if (flow != null) {
-            drawOpening(context, now, elapsedSeconds);
+            context.fill(x, y, x + width, y + height, OPENING_BACKGROUND);
+            scene = openingScene(now, elapsedSeconds);
+        } else {
+            context.fill(x, y, x + width, y + height, BACKGROUND);
+            scene = inspectionScene(now);
+        }
+        if (width <= 0 || height <= 0) {
+            // 布局尚未给出面积时没有可绘制的纹理。
             return;
         }
-        context.fill(x, y, x + width, y + height, BACKGROUND);
-        context.flush();
-        context.enableScissor(x, y, x + width, y + height);
-        Matrix4f matrix = new Matrix4f(context.pose().last().pose())
-                .translate(x, y, 150).mul(modelTransform());
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
-        try {
-            for (BodyVisual node : visible) {
-                // 选中时降低其他对象亮度，密集交织的线状模型仍能看清完整主干与支路。
-                int color = node.getColorRgb();
-                float emphasis = 1;
-                if (node.getId().equals(selectedId) && !node.hasPlayerSkin()) {
-                    color = SELECTED;
-                } else if (!selectedId.isEmpty() && !node.getId().equals(selectedId)) {
-                    emphasis = 0.4f;
-                }
-                // 相机矩阵直接交给 GPU，静态顶点不再逐帧复制或创建转换向量。
-                BodyMesh mesh = meshes.computeIfAbsent(node.getId(), id -> new BodyMesh(node, true));
-                if (node.getTargetKind() == BodyTargetKind.MERIDIAN) {
-                    color = openingOverlay.meshColor(node.getTargetId(), color, now);
-                    float baseline = emphasis * openingOverlay.restingBrightness(node.getTargetId());
-                    emphasis = openingOverlay.meshBrightness(node.getTargetId(), baseline, now);
-                }
-                mesh.draw(matrix, color, emphasis, 255);
-            }
-            var meridianIds = visible.stream().filter(node -> node.getTargetKind() == BodyTargetKind.MERIDIAN)
-                    .map(BodyVisual::getTargetId).collect(java.util.stream.Collectors.toSet());
-            openingOverlay.draw(matrix, null, meridianIds, now, .8f, false);
-        } finally {
-            // 画布退出后恢复 UI 所需渲染状态，避免影响旁边的文字和窗口。
-            RenderSystem.enableCull();
-            RenderSystem.depthMask(true);
-            RenderSystem.disableDepthTest();
-            context.disableScissor();
+        if (renderer == null) {
+            renderer = new BodySceneRenderer();
         }
+        context.guiRenderState.addPicturesInPictureState(BodySceneRenderer.State.of(renderer, scene, false,
+                x, y, x + width, y + height, new Matrix3x2f(context.pose()), context.scissorStack.peek()));
     }
 
-    private void drawOpening(OwoUIDrawContext context, long now, float elapsedSeconds) {
-        // 模型使用独立深度缓冲；合成后正常绘制说明和浮窗，不让三维深度压住文字。
-        context.flush();
-        ScissorStack.drawUnclipped(() -> renderOpening(now, elapsedSeconds));
-        context.enableScissor(x, y, x + width, y + height);
-        RenderSystem.disableDepthTest();
-        RenderSystem.setShader(GameRenderer::getPositionTexShader);
-        RenderSystem.setShaderTexture(0, openingFramebuffer.getColorTextureId());
-        Matrix4f matrix = context.pose().last().pose();
-        BufferBuilder buffer = Tesselator.getInstance().getBuilder();
-        buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
-        buffer.vertex(matrix, x, y + height, 0).uv(0, 0).endVertex();
-        buffer.vertex(matrix, x + width, y + height, 0).uv(1, 0).endVertex();
-        buffer.vertex(matrix, x + width, y, 0).uv(1, 1).endVertex();
-        buffer.vertex(matrix, x, y, 0).uv(0, 1).endVertex();
-        BufferUploader.drawWithShader(buffer.end());
-        context.disableScissor();
+    private BodySceneRenderer.Scene inspectionScene(long now) {
+        // 颜色、亮度和材质在绘制时定下，场景稍后提交时只把它们写入顶点。
+        Matrix4f model = modelTransform();
+        var tints = new ArrayList<Tint>();
+        for (BodyVisual node : visible) {
+            // 选中时降低其他对象亮度，密集交织的线状模型仍能看清完整主干与支路。
+            int color = node.getColorRgb();
+            float emphasis = 1;
+            if (node.getId().equals(selectedId) && !node.hasPlayerSkin()) {
+                color = SELECTED;
+            } else if (!selectedId.isEmpty() && !node.getId().equals(selectedId)) {
+                emphasis = 0.4f;
+            }
+            BodyMesh mesh = meshes.computeIfAbsent(node.getId(), id -> new BodyMesh(node, true));
+            if (node.getTargetKind() == BodyTargetKind.MERIDIAN) {
+                color = openingOverlay.meshColor(node.getTargetId(), color, now);
+                float baseline = emphasis * openingOverlay.restingBrightness(node.getTargetId());
+                emphasis = openingOverlay.meshBrightness(node.getTargetId(), baseline, now);
+            }
+            tints.add(new Tint(mesh, mesh.depthTested(), color, emphasis, 255));
+        }
+        var meridianIds = visible.stream().filter(node -> node.getTargetKind() == BodyTargetKind.MERIDIAN)
+                .map(BodyVisual::getTargetId).collect(java.util.stream.Collectors.toSet());
+        return (matrices, collector) -> {
+            // 每个网格单独一层，按可见顺序逐个绘制；贴图与纯色网格交错时半透明边缘仍按原顺序混合。
+            matrices.pushPose();
+            matrices.mulPose(model);
+            for (int index = 0; index < tints.size(); index++) {
+                Tint tint = tints.get(index);
+                collector.order(index).submitCustomGeometry(matrices, tint.type(), tint::emit);
+            }
+            matrices.popPose();
+            // 路线叠层最后绘制且不测深度，始终压在身体表面之上。
+            collector.order(tints.size()).submitCustomGeometry(matrices, BodyRenderTypes.QUADS_FLAT,
+                    (pose, buffer) -> openingOverlay.draw(buffer, pose.pose(), model, null, meridianIds, now, .8f, false));
+        };
     }
 
-    private void renderOpening(long now, float elapsedSeconds) {
-        // 离屏分辨率跟随窗口；静态网格上传一次，逐帧只改变相机、颜色和少量光点。
-        Minecraft client = Minecraft.getInstance();
-        double scale = client.getWindow().getGuiScale();
-        int pixelsWide = Math.max(1, (int) Math.ceil(width * scale));
-        int pixelsHigh = Math.max(1, (int) Math.ceil(height * scale));
-        if (openingFramebuffer == null) {
-            openingFramebuffer = new TextureTarget(pixelsWide, pixelsHigh, true, Minecraft.ON_OSX);
-            openingFramebuffer.setClearColor(.055f, .07f, .085f, 1);
-        } else if (openingFramebuffer.width != pixelsWide || openingFramebuffer.height != pixelsHigh) {
-            openingFramebuffer.resize(pixelsWide, pixelsHigh, Minecraft.ON_OSX);
+    private BodySceneRenderer.Scene openingScene(long now, float elapsedSeconds) {
+        // 静态网格只算一次，逐帧只改变相机、颜色和少量光点；亮度平滑在绘制时推进，场景只读结果。
+        Matrix4f model = modelTransform();
+        var tints = new ArrayList<Tint>();
+        // 黑色透明表层先画，经脉后画，内部路线始终可见且只有经脉参与选取。
+        for (BodyVisual node : visible) {
+            if (node.getTargetKind() != BodyTargetKind.MERIDIAN) {
+                BodyMesh mesh = meshes.computeIfAbsent(node.getId(), id -> new BodyMesh(node, false));
+                tints.add(new Tint(mesh, BodyRenderTypes.TRIANGLES_FLAT, 0x030609, 1, 150));
+            }
         }
-        openingFramebuffer.clear(Minecraft.ON_OSX);
-        openingFramebuffer.bindWrite(true);
-        RenderSystem.backupProjectionMatrix();
-        RenderSystem.setProjectionMatrix(new Matrix4f().setOrtho(0, Math.max(1, width), Math.max(1, height), 0, -1000, 1000),
-                VertexSorting.DISTANCE_TO_ORIGIN);
-        var view = RenderSystem.getModelViewStack();
-        view.pushPose();
-        view.setIdentity();
-        RenderSystem.applyModelViewMatrix();
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
-        try {
-            Matrix4f matrix = modelTransform();
-            // 黑色透明表层先画，经脉后画，内部路线始终可见且只有经脉参与选取。
-            for (BodyVisual node : visible) {
-                if (node.getTargetKind() != BodyTargetKind.MERIDIAN) {
-                    meshes.computeIfAbsent(node.getId(), id -> new BodyMesh(node, false)).draw(matrix, 0x030609, 1, 150);
-                }
+        // 约 0.3 秒接近新亮度，各种帧率下都只平滑显示权威进度。
+        float brightnessBlend = (float) -Math.expm1(-10 * elapsedSeconds);
+        for (BodyVisual node : visible) {
+            if (node.getTargetKind() != BodyTargetKind.MERIDIAN) {
+                continue;
             }
-            // 约 0.3 秒接近新亮度，各种帧率下都只平滑显示权威进度。
-            float brightnessBlend = (float) -Math.expm1(-10 * elapsedSeconds);
-            for (BodyVisual node : visible) {
-                if (node.getTargetKind() != BodyTargetKind.MERIDIAN) {
-                    continue;
-                }
-                // 储量产生很弱的底光，开拓仍决定主要亮度，未开满储量不会冒充已拓宽。
-                float desired = (float) (.18 + .07 * storedFraction.getOrDefault(node.getTargetId(), 0.0));
-                if (openingProgress.getOrDefault(node.getTargetId(), 0.0) >= 1) {
-                    desired += .55f;
-                }
-                float shown = shownBrightness.getOrDefault(node.getId(), desired);
-                shown += (desired - shown) * brightnessBlend;
-                shownBrightness.put(node.getId(), shown);
-                if (node.getId().equals(selectedId)) {
-                    shown = Math.min(1, shown + .15f);
-                }
-                shown = openingOverlay.meshBrightness(node.getTargetId(), shown, now);
-                int color = openingOverlay.meshColor(node.getTargetId(), 0xF4DC82, now);
-                meshes.computeIfAbsent(node.getId(), id -> new BodyMesh(node, false)).draw(matrix, color, shown, 230);
+            // 储量产生很弱的底光，开拓仍决定主要亮度，未开满储量不会冒充已拓宽。
+            float desired = (float) (.18 + .07 * storedFraction.getOrDefault(node.getTargetId(), 0.0));
+            if (openingProgress.getOrDefault(node.getTargetId(), 0.0) >= 1) {
+                desired += .55f;
             }
-            var meridianIds = visible.stream().filter(node -> node.getTargetKind() == BodyTargetKind.MERIDIAN)
-                    .map(BodyVisual::getTargetId).collect(java.util.stream.Collectors.toSet());
-            int openingParticles = openingOverlay.draw(matrix, null, meridianIds, now, .85f, false);
-            int remainingParticles = EffectSettings.particleLimit() - openingParticles;
-            // 各类装饰共用画布上限，减少动态时撤掉流动光尾，保留静态路线与关口。
-            RenderSystem.setShader(GameRenderer::getPositionColorShader);
-            BufferBuilder buffer = Tesselator.getInstance().getBuilder();
-            buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
-            for (MeridianFlow.Flight flight : flow.flights()) {
-                if (EffectSettings.reducedMotion() || remainingParticles <= 0) {
+            float shown = shownBrightness.getOrDefault(node.getId(), desired);
+            shown += (desired - shown) * brightnessBlend;
+            shownBrightness.put(node.getId(), shown);
+            if (node.getId().equals(selectedId)) {
+                shown = Math.min(1, shown + .15f);
+            }
+            shown = openingOverlay.meshBrightness(node.getTargetId(), shown, now);
+            int color = openingOverlay.meshColor(node.getTargetId(), 0xF4DC82, now);
+            BodyMesh mesh = meshes.computeIfAbsent(node.getId(), id -> new BodyMesh(node, false));
+            tints.add(new Tint(mesh, BodyRenderTypes.TRIANGLES_FLAT, color, shown, 230));
+        }
+        var meridianIds = visible.stream().filter(node -> node.getTargetKind() == BodyTargetKind.MERIDIAN)
+                .map(BodyVisual::getTargetId).collect(java.util.stream.Collectors.toSet());
+        return (matrices, collector) -> {
+            // 表层与经脉同一材质，同层内按加入顺序叠加；路线、光点与标记在下一层。
+            matrices.pushPose();
+            matrices.mulPose(model);
+            for (Tint tint : tints) {
+                collector.order(0).submitCustomGeometry(matrices, tint.type(), tint::emit);
+            }
+            matrices.popPose();
+            collector.order(1).submitCustomGeometry(matrices, BodyRenderTypes.QUADS_FLAT, (pose, buffer) -> {
+                int openingParticles = openingOverlay.draw(buffer, pose.pose(), model, null, meridianIds, now, .85f, false);
+                drawFlights(buffer, pose.pose(), model, now, EffectSettings.particleLimit() - openingParticles);
+                drawMarkers(buffer, pose.pose(), model);
+            });
+        };
+    }
+
+    private void drawFlights(VertexConsumer buffer, Matrix4fc space, Matrix4f model, long now, int remainingParticles) {
+        // 各类装饰共用画布上限，减少动态时撤掉流动光尾，保留静态路线与关口。
+        int red = (transitColor >> 16) & 255;
+        int green = (transitColor >> 8) & 255;
+        int blue = transitColor & 255;
+        for (MeridianFlow.Flight flight : flow.flights()) {
+            if (EffectSettings.reducedMotion() || remainingParticles <= 0) {
+                break;
+            }
+            for (int tail = 3; tail >= 0; tail--) {
+                if (remainingParticles-- <= 0) {
                     break;
                 }
-                for (int tail = 3; tail >= 0; tail--) {
-                    if (remainingParticles-- <= 0) {
-                        break;
-                    }
-                    Vector3f point = matrix.transformPosition(flight.point(now, tail * .025));
-                    float radius = tail == 0 ? 1.5f : .9f;
-                    int alpha = 220 - tail * 48;
-                    int red = (transitColor >> 16) & 255;
-                    int green = (transitColor >> 8) & 255;
-                    int blue = transitColor & 255;
-                    buffer.vertex(point.x - radius, point.y - radius, 0).color(red, green, blue, alpha).endVertex();
-                    buffer.vertex(point.x + radius, point.y - radius, 0).color(red, green, blue, alpha).endVertex();
-                    buffer.vertex(point.x + radius, point.y + radius, 0).color(red, green, blue, alpha).endVertex();
-                    buffer.vertex(point.x - radius, point.y + radius, 0).color(red, green, blue, alpha).endVertex();
-                }
+                Vector3f point = model.transformPosition(flight.point(now, tail * .025));
+                float radius = tail == 0 ? 1.5f : .9f;
+                int alpha = 220 - tail * 48;
+                buffer.addVertex(space, point.x - radius, point.y - radius, 0).setColor(red, green, blue, alpha);
+                buffer.addVertex(space, point.x + radius, point.y - radius, 0).setColor(red, green, blue, alpha);
+                buffer.addVertex(space, point.x + radius, point.y + radius, 0).setColor(red, green, blue, alpha);
+                buffer.addVertex(space, point.x - radius, point.y + radius, 0).setColor(red, green, blue, alpha);
             }
-            for (Marker marker : markers) {
-                // 环形标记与模型进入同一帧缓冲，不会盖住窗口文字或脱离旋转后的模型。
-                // 以内外半径拼出连续实线环，点状环在小窗口里难以分辨颜色。
-                Vector3f center = matrix.transformPosition(new Vector3f(marker.x(), marker.y(), marker.z()));
-                float inner = Math.max(0, marker.radiusPixels() - marker.thicknessPixels() / 2);
-                float outer = marker.radiusPixels() + marker.thicknessPixels() / 2;
-                int color = marker.color();
-                int red = color >> 16 & 255;
-                int green = color >> 8 & 255;
-                int blue = color & 255;
-                int alpha = color >>> 24;
-                for (int step = 0; step < 48; step++) {
-                    double from = step * Math.PI * 2 / 48;
-                    double to = (step + 1) * Math.PI * 2 / 48;
-                    float fromCos = (float) Math.cos(from);
-                    float fromSin = (float) Math.sin(from);
-                    float toCos = (float) Math.cos(to);
-                    float toSin = (float) Math.sin(to);
-                    buffer.vertex(center.x + fromCos * inner, center.y + fromSin * inner, 0).color(red, green, blue, alpha).endVertex();
-                    buffer.vertex(center.x + fromCos * outer, center.y + fromSin * outer, 0).color(red, green, blue, alpha).endVertex();
-                    buffer.vertex(center.x + toCos * outer, center.y + toSin * outer, 0).color(red, green, blue, alpha).endVertex();
-                    buffer.vertex(center.x + toCos * inner, center.y + toSin * inner, 0).color(red, green, blue, alpha).endVertex();
-                }
+        }
+    }
+
+    private void drawMarkers(VertexConsumer buffer, Matrix4fc space, Matrix4f model) {
+        // 环形标记与模型进入同一张画中画纹理，不会盖住窗口文字或脱离旋转后的模型。
+        // 以内外半径拼出连续实线环，点状环在小窗口里难以分辨颜色。
+        for (Marker marker : markers) {
+            Vector3f center = model.transformPosition(new Vector3f(marker.x(), marker.y(), marker.z()));
+            float inner = Math.max(0, marker.radiusPixels() - marker.thicknessPixels() / 2);
+            float outer = marker.radiusPixels() + marker.thicknessPixels() / 2;
+            int color = marker.color();
+            for (int step = 0; step < 48; step++) {
+                double from = step * Math.PI * 2 / 48;
+                double to = (step + 1) * Math.PI * 2 / 48;
+                float fromCos = (float) Math.cos(from);
+                float fromSin = (float) Math.sin(from);
+                float toCos = (float) Math.cos(to);
+                float toSin = (float) Math.sin(to);
+                buffer.addVertex(space, center.x + fromCos * inner, center.y + fromSin * inner, 0).setColor(color);
+                buffer.addVertex(space, center.x + fromCos * outer, center.y + fromSin * outer, 0).setColor(color);
+                buffer.addVertex(space, center.x + toCos * outer, center.y + toSin * outer, 0).setColor(color);
+                buffer.addVertex(space, center.x + toCos * inner, center.y + toSin * inner, 0).setColor(color);
             }
-            BufferUploader.drawWithShader(buffer.end());
-        } finally {
-            // 恢复工作台状态，后续文字与其他窗口不会继承此模型的矩阵和深度。
-            RenderSystem.depthMask(true);
-            RenderSystem.enableCull();
-            RenderSystem.setShaderColor(1, 1, 1, 1);
-            view.popPose();
-            RenderSystem.applyModelViewMatrix();
-            RenderSystem.restoreProjectionMatrix();
-            client.getMainRenderTarget().bindWrite(true);
+        }
+    }
+
+    /** 一次网格提交：材质、颜色与亮度在画布绘制时定下，场景提交时原样写入顶点。 */
+    private record Tint(BodyMesh mesh, RenderType type, int color, float brightness, int alpha) {
+        void emit(PoseStack.Pose pose, VertexConsumer buffer) {
+            mesh.emit(buffer, pose.pose(), color, brightness, alpha);
         }
     }
 
@@ -442,8 +419,9 @@ public final class BodyCanvas extends BaseComponent {
     }
 
     @Override
-    public boolean onMouseDown(double mouseX, double mouseY, int button) {
+    public boolean onMouseDown(MouseButtonEvent click, boolean doubled) {
         // 左键点击与旋转共用入口，释放时按累计移动量区分操作。
+        int button = click.button();
         if (button == 0) {
             dragging = true;
             draggedPixels = 0;
@@ -457,9 +435,9 @@ public final class BodyCanvas extends BaseComponent {
     }
 
     @Override
-    public boolean onMouseDrag(double mouseX, double mouseY, double dx, double dy, int button) {
+    public boolean onMouseDrag(MouseButtonEvent click, double dx, double dy) {
         // 超过点击阈值后仅旋转，不在释放时额外触发选中。
-        if (dragging && button == 0) {
+        if (dragging && click.button() == 0) {
             draggedPixels += Math.hypot(dx, dy);
             if (draggedPixels > CLICK_DISTANCE_PIXELS) {
                 camera.drag(dx, dy);
@@ -470,12 +448,12 @@ public final class BodyCanvas extends BaseComponent {
     }
 
     @Override
-    public boolean onMouseUp(double mouseX, double mouseY, int button) {
-        // 命中失败保持原选择，不把背景点击映射为某个默认器官。
-        boolean handled = dragging && button == 0;
+    public boolean onMouseUp(MouseButtonEvent click) {
+        // 命中失败保持原选择，不把背景点击映射为某个默认器官；坐标已相对画布。
+        boolean handled = dragging && click.button() == 0;
         dragging = false;
         if (handled && draggedPixels <= CLICK_DISTANCE_PIXELS) {
-            BodyVisual hit = pick(mouseX, mouseY);
+            BodyVisual hit = pick(click.x(), click.y());
             if (hit != null) {
                 selection.accept(hit);
             }
@@ -491,12 +469,12 @@ public final class BodyCanvas extends BaseComponent {
     }
 
     @Override
-    public boolean onKeyPress(int keyCode, int scanCode, int modifiers) {
+    public boolean onKeyPress(KeyEvent event) {
         // F 只在画布获得焦点时生效，避免抢占聊天框等其他输入组件的快捷键。
-        if (keyCode == GLFW.GLFW_KEY_F && modifiers == 0) {
+        if (event.key() == GLFW.GLFW_KEY_F && event.modifiers() == 0) {
             return focusSelected();
         }
-        return super.onKeyPress(keyCode, scanCode, modifiers);
+        return super.onKeyPress(event);
     }
 
     boolean focusSelected() {

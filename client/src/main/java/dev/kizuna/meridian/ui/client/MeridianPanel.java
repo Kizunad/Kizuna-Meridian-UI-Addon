@@ -4,13 +4,13 @@ import dev.kizuna.inventoryui.client.component.ResponsiveLayout;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
 import io.wispforest.owo.ui.container.FlowLayout;
-import io.wispforest.owo.ui.core.Component;
+import io.wispforest.owo.ui.core.UIComponent;
 import io.wispforest.owo.ui.core.Positioning;
 import io.wispforest.owo.ui.core.Sizing;
 import io.wispforest.owo.ui.parsing.UIModelLoader;
 import java.util.Map;
 import java.util.function.Consumer;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 /** 站姿经脉场景；点击选中高亮，快捷键负责聚焦与权威操作。 */
@@ -31,7 +31,7 @@ public final class MeridianPanel {
         // 使用生物包的表层和经脉模型，保持站姿，不借用吐纳盘坐动画。
         this.scene = scene;
         this.selection = selection;
-        content = UIModelLoader.get(new ResourceLocation("meridian_ui", "opening"))
+        content = UIModelLoader.get(Identifier.fromNamespaceAndPath("meridian_ui", "opening"))
                 .expandTemplate(FlowLayout.class, "meridian-panel", Map.of());
         content.childById(FlowLayout.class, "info").child(new MeridianInfo());
         canvas = new BodyCanvas(scene, this::clicked, () -> {
@@ -46,12 +46,12 @@ public final class MeridianPanel {
             content.child(extension.component());
             canvas.onDispose(extension::close);
         }
-        canvas.keyPress().subscribe((key, scan, modifiers) -> {
+        canvas.keyPress().subscribe(event -> {
             // 凝聚和暂停共用权威操作入口，按键不在客户端变更资源。
-            if (extension != null && extension.keyPress(key, modifiers)) {
+            if (extension != null && extension.keyPress(event.key(), event.modifiers())) {
                 return true;
             }
-            if (key == GLFW.GLFW_KEY_G && modifiers == 0) {
+            if (event.key() == GLFW.GLFW_KEY_G && event.modifiers() == 0) {
                 operate.run();
                 return true;
             }
@@ -64,16 +64,16 @@ public final class MeridianPanel {
 
     private void arrange(int width, int height) {
         // 顶栏仅留下标题和圆形信息入口，快捷键收在悬浮说明中。
-        place(content.childById(Component.class, "title"), 8, 6, width - 44, 18);
-        place(content.childById(Component.class, "info"), width - 28, 4, 18, 18);
-        place(content.childById(Component.class, "scene"), 6, 30, width - 12, height - 36);
+        place(content.childById(UIComponent.class, "title"), 8, 6, width - 44, 18);
+        place(content.childById(UIComponent.class, "info"), width - 28, 4, 18, 18);
+        place(content.childById(UIComponent.class, "scene"), 6, 30, width - 12, height - 36);
         if (extension != null) {
             // 练习控件留出三行说明和右侧关口盘的高度，模型上半身仍保持可见。
             place(extension.component(), 14, height - 156, width - 28, 144);
         }
     }
 
-    static void place(Component component, int x, int y, int width, int height) {
+    static void place(UIComponent component, int x, int y, int width, int height) {
         // 内容区缩小时仍保留正尺寸，文字溢出由各自滚动区处理。
         component.positioning(Positioning.absolute(Math.max(0, x), Math.max(0, y)));
         component.sizing(Sizing.fixed(Math.max(1, width)), Sizing.fixed(Math.max(1, height)));

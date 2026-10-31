@@ -5,13 +5,17 @@ import org.joml.Vector3f;
 
 /** 三维吐纳相机；投影、鼠标反投影与粒子共用同一坐标变换。 */
 final class BreathingCamera {
+    /** 垂直视角（度）与近远裁剪面（米）；画中画渲染器按同一组数值建立透视投影。 */
+    static final float FOV_DEGREES = 45;
+    static final float NEAR = .05f;
+    static final float FAR = 30;
     private double yaw = -.2;
     private double pitch = .10;
     private double distance = 3.6;
 
     Matrix4f projection(float aspect) {
         // 远近大小由真实深度产生，旋转后仍保持一致。
-        return new Matrix4f().perspective((float) Math.toRadians(45), aspect, .05f, 30);
+        return new Matrix4f().perspective((float) Math.toRadians(FOV_DEGREES), aspect, NEAR, FAR);
     }
 
     Matrix4f view() {

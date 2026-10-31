@@ -8,13 +8,13 @@
 
 经脉操作卡扩展需要 Framework 当前源码的 `operation_ui.proto`，吐纳到货累计需要 `BreathingView.stored_qi`。这些是工作区契约变更，运行时须同步更新 Framework、Human Fabric 和 UI，不能只替换 UI JAR。多 Addon 的注册、更新、请求和卸载见[经脉操作卡](Meridian-Opening.md)。
 
-Human-UI 是客户端必需运行依赖：`fabric.mod.json` 声明 `meridian_human_ui`，Gradle 固定装配同级仓库的安装 JAR。UI 只编译通用路线接口，Human-UI 编译使用 UI 接口与 Human 模型，二者不形成源码编译环。首次从空构建目录装配时，先在 UI 执行 `./gradlew :client:remapJar` 生成接口所在 JAR，再在 Human-UI 执行 `./gradlew build`，最后回 UI 执行完整 `./gradlew build`；之后修改接口也按此顺序重建。Framework、Human、UI、Items、Damage、Healing、Human-UI、Players-Animation 在适用端整套必装。处理后的依赖审计见 Human-UI 的 `docs/wiki/Dependency-Audit.md`。
+Human-UI 是客户端必需运行依赖：`fabric.mod.json` 声明 `meridian_human_ui`，Gradle 固定装配同级仓库的安装 JAR。UI 只编译通用路线接口，Human-UI 编译使用 UI 接口与 Human 模型，二者不形成源码编译环。首次从空构建目录装配时，先在 UI 执行 `./gradlew :client:jar` 生成接口所在 JAR（26.2 不混淆，没有 `remapJar`），再在 Human-UI 执行 `./gradlew build`，最后回 UI 执行完整 `./gradlew build`；之后修改接口也按此顺序重建。Framework、Human、UI、Items、Damage、Healing、Human-UI、Players-Animation 在适用端整套必装。处理后的依赖审计见 Human-UI 的 `docs/wiki/Dependency-Audit.md`。
 
 ## 本地构建
 
-产物以 Java 17 编译；Loom 1.13.6 要求运行 Gradle 的 JDK 为 21 及以上。需要八个同级 Meridian/Animation 仓库，以及 Inventory UI、BS3D 的已构建产物。settings 应用 Framework 的 `scripts/workspace.gradle`：Framework、Inventory UI、Players-Animation 与 Progression client/shared 以源码组合，编译使用上游 named 开发 JAR 并随本仓先行构建，开发运行由完整装配按替换坐标装入；Human client 等只在运行时需要的产物按装配清单读取已构建 JAR。默认目录关系示例：
+产物以 Java 25 编译；Gradle 守护进程按 `gradle/gradle-daemon-jvm.properties` 使用 JDK 25（Loom 1.19.3、Gradle 9.8.0）。需要八个同级 Meridian/Animation 仓库，以及 Inventory UI、BS3D 的已构建产物。settings 应用 Framework 的 `scripts/workspace.gradle`：Framework、Inventory UI、Players-Animation 与 Progression client/shared 以源码组合，编译直接使用上游普通 JAR（26.2 不混淆，无映射）并随本仓先行构建，开发运行由完整装配按替换坐标装入；Human client 等只在运行时需要的产物按装配清单读取已构建 JAR。默认目录关系示例：
 
-打坐预览通过 `modImplementation` 直接依赖同级 `Kizuna-Players-Animation` 的公开 API。`BreathingCanvas` 和 `MeditationAvatar` 不判断安装状态、不反射调用。吐纳要求动画侧已加载模型及 `meditate`，缺资源明确报错。当前动画 JAR 已包含双体型骨架与八段动画，2026-10-21 WN 验收直接使用 JAR 内资源；开发装配同样无需外置 `93f8b5b` 补丁资源包。预览按真实玩家选择 classic/slim；外世界同步由 Human 服务端调度，预览播放不作为外世界同步成功的依据。
+打坐预览在编译期直接使用同级 `Kizuna-Players-Animation` 的公开 API，运行时由完整装配装入。`BreathingCanvas` 和 `MeditationAvatar` 不判断安装状态、不反射调用。吐纳要求动画侧已加载模型及 `meditate`，缺资源明确报错。当前动画 JAR 已包含双体型骨架与八段动画，2026-10-21 WN 验收直接使用 JAR 内资源；开发装配同样无需外置 `93f8b5b` 补丁资源包。预览按真实玩家选择 classic/slim；外世界同步由 Human 服务端调度，预览播放不作为外世界同步成功的依据。
 
 ```text
 Code/
@@ -36,7 +36,7 @@ python3 "scripts/check_docs.py"
 ./gradlew -Pkizuna.dir.framework="/path/to/Kizuna-Meridian-Mod-Framework" -Pkizuna.dir.inventory-ui="/path/to/Kizuna-Inventory-UI-Framework" build
 ```
 
-Windows 对应使用 `gradlew.bat`。Gradle Wrapper 包含分发校验和，源码编译目标为 Java 17。
+Windows 对应使用 `gradlew.bat`。Gradle Wrapper 包含分发校验和，源码编译目标为 Java 25。
 
 ## 依赖关系
 
@@ -63,14 +63,16 @@ Human Addon 由宿主装配人体内容，客户端通过必需的 Human-UI 与 
 
 窗口自适应还需要 Inventory UI 当前源码中的七参数 `UiWindowDefinition` 和 `ResponsiveLayout`。先重建框架 JAR 再构建本附属，运行时同步更新两个客户端产物；只更换 UI Addon 而保留旧窗口框架不满足此 API 依赖。这是本地构建要求，尚无对应的已发布版本号。
 
-客户端已配置 Fabric Loom、Minecraft 1.20.1、Mojang 官方映射、Fabric Loader 0.16.10、Fabric API 0.92.3+1.20.1 与 owo-lib 0.11.2+1.20。静态布局使用 XML，公共相机与窗口 API 来自 Inventory UI。服务端提供纯 Java 聚气路由桥接，未内置 Minecraft 玩家或世界服务。
+客户端已配置 Fabric Loom 1.19.3、Minecraft 26.2（不混淆，无映射）、Fabric Loader 0.20.1、Fabric API 0.161.0+26.2 与 owo-lib 0.13.1+26.2。身体界面的 `meridian:*` 通道直接取用 Framework Fabric 模组的 `MeridianChannels`，`fabric.mod.json` 声明 `meridian_framework`。身体与吐纳画布各自持有 26.2 画中画渲染器，在独立纹理和深度里提交网格、叠层与粒子，再由 GUI 渲染器贴回窗口。静态布局使用 XML，公共相机与窗口 API 来自 Inventory UI。服务端提供纯 Java 聚气路由桥接，未内置 Minecraft 玩家或世界服务。
 
 ## 构建产物与验证范围
 
 - `client/build/libs/kizuna-meridian-ui-addon-client-0.1.0-SNAPSHOT.jar`
 - `server/build/libs/kizuna-meridian-ui-addon-server-0.1.0-SNAPSHOT.jar`
 
-客户端 JAR 包含 Fabric 窗口入口、通用查看器及 XML；没有人体模型、演示、测试或另一份核心。宿主仍需提供经脉 Java 库与依赖，并向窗口交付已授权的身体快照。经脉框架目前没有 Fabric mod ID，不能只把 UI JAR 放进 `mods` 就视为完整部署。
+客户端 JAR 包含 Fabric 窗口入口、通用查看器及 XML；没有人体模型、演示、测试或另一份核心。宿主仍需提供经脉 Java 库与依赖，并向窗口交付已授权的身体快照。经脉框架的 Fabric 模组 `meridian_framework` 是声明的必需依赖，只把 UI JAR 放进 `mods` 不构成完整部署。
+
+2026-11-01 迁移到 Minecraft 26.2：本仓 `test build` 通过，JUnit 10 项（`BodyPresentationTest` 8、`OpeningFeedbackTest` 2）零失败、错误、跳过，与迁移前相同；`clientTest` 源集编译通过；`check_docs.py` 通过。身体与吐纳画布由离屏帧缓冲加即时绘制改为画中画渲染器提交。`:client:runInnerVisionTest` 和 Human-UI 整合服 smoke 都依赖完整装配，而 Human、Human-UI 等尚未迁到 26.2，本次没有运行；身体、经脉与吐纳画面的实际效果也尚未实看。本页其余 1.20.1 时期的结果不代表 26.2 已验证。
 
 `BodyPresentationTest` 验证非人体映射、快照状态与坏资源拒绝；游戏内交互及[手动吐纳](Gathering.md)由 Human-UI 的整合服 smoke 在真实玩家身体上验收（见下节）。生产身体查询入口、玩家实体绑定与资源协商仍由宿主接入。吐纳方向、## 游戏内验收
 

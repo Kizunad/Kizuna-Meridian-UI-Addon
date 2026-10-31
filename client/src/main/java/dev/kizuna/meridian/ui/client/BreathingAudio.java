@@ -5,7 +5,7 @@ import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathingView;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.AbstractSoundInstance;
 import net.minecraft.client.resources.sounds.TickableSoundInstance;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.RandomSource;
 
@@ -40,7 +40,7 @@ final class BreathingAudio {
             manager.stop(sound);
         }
         String path = desired == INHALE ? "breathing.inhale" : "breathing.exhale";
-        sound = new BreathSound(new ResourceLocation("meridian_ui", path));
+        sound = new BreathSound(Identifier.fromNamespaceAndPath("meridian_ui", path));
         action = desired;
         manager.play(sound);
     }
@@ -67,7 +67,7 @@ final class BreathingAudio {
         private float targetVolume = MAX_VOLUME;
         private boolean done;
 
-        BreathSound(ResourceLocation id) {
+        BreathSound(Identifier id) {
             // 界面声音不随相机距离衰减，沿用玩家音效音量设置；轻声循环支持持续吸呼。
             super(id, SoundSource.PLAYERS, RandomSource.create());
             looping = true;

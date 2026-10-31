@@ -1,22 +1,17 @@
 package dev.kizuna.meridian.ui.client;
 
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.BufferUploader;
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import com.mojang.blaze3d.vertex.Tesselator;
-import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
 import dev.kizuna.meridian.ui.api.OpeningEffectProvider;
 import dev.kizuna.meridian.ui.api.OpeningEffectProvider.Node;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.sounds.SoundEvent;
 import org.joml.Matrix4f;
+import org.joml.Matrix4fc;
 import org.joml.Vector3f;
 import java.util.*;
 import java.util.function.Function;
@@ -51,7 +46,7 @@ final class OpeningOverlay {
             boolean completed = events.stream().anyMatch(event -> event.outcome() == OpeningFeedback.Outcome.COMPLETED);
             String sound = completed ? "opening.complete" : "opening.interrupted";
             Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(
-                    SoundEvent.createVariableRangeEvent(new ResourceLocation("meridian_ui", sound)), 1, .38f));
+                    SoundEvent.createVariableRangeEvent(Identifier.fromNamespaceAndPath("meridian_ui", sound)), 1, .38f));
         }
     }
 
@@ -100,21 +95,16 @@ final class OpeningOverlay {
         return flash.outcome() == OpeningFeedback.Outcome.COMPLETED ? 0xFFF4CE : 0xB84B52;
     }
 
-    int draw(Matrix4f matrix, Function<String, Matrix4f> pose, Set<String> visible, long now,
-             float unit, boolean showOpened) {
+    int draw(VertexConsumer buffer, Matrix4fc space, Matrix4f matrix, Function<String, Matrix4f> pose,
+             Set<String> visible, long now, float unit, boolean showOpened) {
         // 普通检视尊重经脉层勾选；打坐在同一模型上使用动画骨矩阵，不另画站姿身体。
+        // matrix 把路线点换到场景空间以求稳定线宽，space 再把场景空间顶点写入提交缓冲。
         if (body == null) {
             return 0;
         }
         boolean reduced = EffectSettings.reducedMotion();
         int particleBudget = reduced ? 0 : Math.min(16, EffectSettings.particleLimit());
         int emitted = 0;
-        RenderSystem.setShader(GameRenderer::getPositionColorShader);
-        RenderSystem.setShaderColor(1, 1, 1, 1);
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
-        BufferBuilder buffer = Tesselator.getInstance().getBuilder();
-        buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
         for (MeridianState state : body.getMeridianStatesList()) {
             String id = state.getId();
             BodyVisual visual = visuals.get(id);
@@ -158,7 +148,7 @@ final class OpeningOverlay {
                     progress = reduced ? flash.progress() : flash.progress() * Math.max(0, 1 - age / 1.7);
                     // 零进度中断仍沿全脉给一次低亮暗红，玩家能看见停止而非静默消失。
                     for (int i = 1; i < points.size(); i++) {
-                        line(buffer, points.get(i - 1), points.get(i), unit, alpha / 3, color);
+                        line(buffer, space, points.get(i - 1), points.get(i), unit, alpha / 3, color);
                     }
                 }
             }
@@ -168,32 +158,31 @@ final class OpeningOverlay {
                 Vector3f to = points.get(i);
                 double start = path.fractions[i - 1];
                 double end = path.fractions[i];
-                line(buffer, from, to, unit * .7f, 100, 0x705832);
+                line(buffer, space, from, to, unit * .7f, 100, 0x705832);
                 if (start >= progress || (warning && i % 5 == 0)) {
                     continue;
                 }
                 Vector3f litEnd = end > progress ? new Vector3f(from).lerp(to, (float) ((progress - start) / (end - start))) : to;
-                line(buffer, from, litEnd, width * 3, alpha / 5, color);
-                line(buffer, from, litEnd, width, alpha, color);
+                line(buffer, space, from, litEnd, width * 3, alpha / 5, color);
+                line(buffer, space, from, litEnd, width, alpha, color);
             }
             if (active && flash == null) {
                 // 前沿是权威进度标记，装饰光点则始终沿相同方向流动，不代表额外真元入账。
                 Vector3f front = path.point(points, progress);
-                diamond(buffer, front, unit * 3.5f, 245, warning ? 0xF0A76A : 0xFFF4D5);
+                diamond(buffer, space, front, unit * 3.5f, 245, warning ? 0xF0A76A : 0xFFF4D5);
                 int count = Math.min(12, particleBudget - emitted);
                 for (int i = 0; i < count; i++) {
                     double along = (seconds * .23 + i / (double) Math.max(1, count)) % 1;
                     Vector3f point = path.point(points, along);
-                    diamond(buffer, point, unit * 1.6f, 170, color);
+                    diamond(buffer, space, point, unit * 1.6f, 170, color);
                 }
                 emitted += count;
             }
         }
-        BufferUploader.drawWithShader(buffer.end());
         return emitted;
     }
 
-    private static void line(BufferBuilder buffer, Vector3f a, Vector3f b, float radius, int alpha, int color) {
+    private static void line(VertexConsumer buffer, Matrix4fc space, Vector3f a, Vector3f b, float radius, int alpha, int color) {
         // 以相机空间窄面片绘制稳定线宽，不依赖平台 GL 宽线实现。
         float dx = b.x - a.x;
         float dy = b.y - a.y;
@@ -204,19 +193,19 @@ final class OpeningOverlay {
         float x = -dy / length * radius;
         float y = dx / length * radius;
         int argb = alpha << 24 | color;
-        buffer.vertex(a.x - x, a.y - y, a.z).color(argb).endVertex();
-        buffer.vertex(b.x - x, b.y - y, b.z).color(argb).endVertex();
-        buffer.vertex(b.x + x, b.y + y, b.z).color(argb).endVertex();
-        buffer.vertex(a.x + x, a.y + y, a.z).color(argb).endVertex();
+        buffer.addVertex(space, a.x - x, a.y - y, a.z).setColor(argb);
+        buffer.addVertex(space, b.x - x, b.y - y, b.z).setColor(argb);
+        buffer.addVertex(space, b.x + x, b.y + y, b.z).setColor(argb);
+        buffer.addVertex(space, a.x + x, a.y + y, a.z).setColor(argb);
     }
 
-    private static void diamond(BufferBuilder buffer, Vector3f p, float r, int alpha, int color) {
+    private static void diamond(VertexConsumer buffer, Matrix4fc space, Vector3f p, float r, int alpha, int color) {
         // 前沿的菱形与普通流光可从形状区分，静态模式仍保留前沿。
         int argb = alpha << 24 | color;
-        buffer.vertex(p.x - r, p.y, p.z).color(argb).endVertex();
-        buffer.vertex(p.x, p.y - r, p.z).color(argb).endVertex();
-        buffer.vertex(p.x + r, p.y, p.z).color(argb).endVertex();
-        buffer.vertex(p.x, p.y + r, p.z).color(argb).endVertex();
+        buffer.addVertex(space, p.x - r, p.y, p.z).setColor(argb);
+        buffer.addVertex(space, p.x, p.y - r, p.z).setColor(argb);
+        buffer.addVertex(space, p.x + r, p.y, p.z).setColor(argb);
+        buffer.addVertex(space, p.x, p.y + r, p.z).setColor(argb);
     }
 
     private static final class Path {

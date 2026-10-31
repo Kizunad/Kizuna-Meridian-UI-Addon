@@ -4,6 +4,7 @@ import dev.kizuna.inventoryui.client.ClientBindings;
 import dev.kizuna.inventoryui.client.ClientRuntime;
 import dev.kizuna.inventoryui.protocol.UiMessageRouter;
 import dev.kizuna.inventoryui.protocol.UiWire;
+import dev.kizuna.meridian.fabric.MeridianChannels;
 import dev.kizuna.inventoryui.window.UiWindowManager.WindowKey;
 import dev.kizuna.meridian.progression.client.ClientProgression;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
@@ -11,12 +12,10 @@ import dev.kizuna.meridian.protocol.pb.OpeningMessages.*;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.ResponseEnvelope;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.BodyVisual;
 import dev.kizuna.meridian.protocol.pb.OperationUiMessages.*;
-import io.wispforest.owo.ui.component.Components;
+import io.wispforest.owo.ui.component.UIComponents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,8 +24,6 @@ import java.util.function.Consumer;
 
 /** 经脉窗口与操作意图编排；只读快照、网络回执和镜头各自独立。 */
 final class MeridianWindows {
-    private static final ResourceLocation REQUEST = new ResourceLocation("meridian", "opening_request");
-    private static final ResourceLocation RESPONSE = new ResourceLocation("meridian", "opening_response");
     private BodyScene scene;
     private BodySnapshot body;
     private List<MeridianOpeningRule> rules = List.of();
@@ -106,7 +103,7 @@ final class MeridianWindows {
                 return new LockedNotice(extension.title(), extension.lockedReason());
             }
             if (scene == null || body == null) {
-                return Components.label(Component.literal(UiErrors.MISSING_BODY));
+                return UIComponents.label(Component.literal(UiErrors.MISSING_BODY));
             }
             practice = new MeridianPanel(scene, body, selected -> {}, () -> {}, true);
             practiceKey = openedKey;
@@ -124,23 +121,16 @@ final class MeridianWindows {
             });
             return opened.root();
         });
-        ClientPlayNetworking.registerGlobalReceiver(RESPONSE, (client, handler, buffer, responseSender) -> {
-            if (buffer.readableBytes() == 0 || buffer.readableBytes() > 1024 * 1024) {
+        ClientPlayNetworking.registerGlobalReceiver(MeridianChannels.OPENING_RESPONSE.type(), (packet, context) -> {
+            // 回调已在当前连接的客户端线程，旧连接的回执不会到达这里；空包与超长包直接丢弃。
+            if (!MeridianChannels.OPENING_RESPONSE.accepts(packet)) {
                 return;
             }
-            byte[] payload = new byte[buffer.readableBytes()];
-            buffer.readBytes(payload);
-            client.execute(() -> {
-                // 旧连接迟到回执不能改变新连接的请求状态。
-                if (client.getConnection() != handler) {
-                    return;
-                }
-                try {
-                    receive(ResponseEnvelope.parseFrom(payload));
-                } catch (IOException invalid) {
-                    org.slf4j.LoggerFactory.getLogger("meridian_ui").warn(UiErrors.INVALID_UPDATE, invalid);
-                }
-            });
+            try {
+                receive(ResponseEnvelope.parseFrom(packet.bytes()));
+            } catch (IOException invalid) {
+                org.slf4j.LoggerFactory.getLogger("meridian_ui").warn(UiErrors.INVALID_UPDATE, invalid);
+            }
         });
         bindings.message(new UiWire.Contract<>(new UiMessageRouter.Contract<>("meridian_ui:body",
                 "meridian_ui:opening_request", 1, UiMessageRouter.Direction.CLIENT_TO_SERVER,
@@ -153,7 +143,7 @@ final class MeridianWindows {
             ClientProgression.requireCultivation();
             runtime = owner;
             if (scene == null || body == null) {
-                return Components.label(Component.literal(UiErrors.MISSING_BODY));
+                return UIComponents.label(Component.literal(UiErrors.MISSING_BODY));
             }
             panel = new MeridianPanel(scene, body, this::select, this::operate);
             panelKey = window.key();
@@ -235,14 +225,12 @@ final class MeridianWindows {
 
     private void bindFabric() {
         // 缺少声明是整套装配错误，不自动切换另一条请求路径。
-        if (!ClientPlayNetworking.canSend(REQUEST)) {
-            throw new IllegalStateException(UiErrors.REQUIRED_HOST_CHANNEL + REQUEST);
+        if (!ClientPlayNetworking.canSend(MeridianChannels.OPENING_REQUEST.type())) {
+            throw new IllegalStateException(UiErrors.REQUIRED_HOST_CHANNEL + MeridianChannels.OPENING_REQUEST.type().id());
         }
         sender = request -> {
             // 仅传意图与快照版本；时间、身份与资源均由服务器独立判定。
-            var buffer = PacketByteBufs.create();
-            buffer.writeBytes(request.toByteArray());
-            ClientPlayNetworking.send(REQUEST, buffer);
+            ClientPlayNetworking.send(MeridianChannels.OPENING_REQUEST.payload(request.toByteArray()));
         };
     }
 
@@ -436,7 +424,7 @@ final class MeridianWindows {
         return practice;
     }
 
-    io.wispforest.owo.ui.core.Component operationRoot() {
+    io.wispforest.owo.ui.core.UIComponent operationRoot() {
         // 与主窗口一致，公开当前组件供宿主检查布局；关闭后不保留组件引用。
         return operation == null ? null : operation.root();
     }

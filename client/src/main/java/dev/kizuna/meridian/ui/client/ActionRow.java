@@ -1,16 +1,18 @@
 package dev.kizuna.meridian.ui.client;
 
-import io.wispforest.owo.ui.base.BaseComponent;
+import io.wispforest.owo.ui.base.BaseUIComponent;
 import io.wispforest.owo.ui.core.CursorStyle;
-import io.wispforest.owo.ui.core.OwoUIDrawContext;
+import io.wispforest.owo.ui.core.OwoUIGraphics;
 import io.wispforest.owo.ui.core.Sizing;
 import org.lwjgl.glfw.GLFW;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 
 /** 与分层勾选框一致的平面操作行，鼠标和键盘共享执行入口。 */
-final class ActionRow extends BaseComponent {
+final class ActionRow extends BaseUIComponent {
     private static final int HEIGHT = 30;
     private static final int TEXT = 0xFFE3C37B;
     private static final int MUTED = 0xFF80979F;
@@ -31,7 +33,7 @@ final class ActionRow extends BaseComponent {
     }
 
     @Override
-    public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
+    public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
         // 少量同心描边按缓慢周期改变透明度，黄光仅作提示，不创建粒子或离屏缓冲。
         var text = Minecraft.getInstance().font;
         boolean available = enabled.getAsBoolean();
@@ -47,27 +49,35 @@ final class ActionRow extends BaseComponent {
         context.fill(x + 3, y + 3, x + width - 3, y + height - 3, hovered ? HOVER : BACKGROUND);
         context.drawRectOutline(x + 3, y + 3, width - 6, height - 6, available ? 0x807D6F45 : 0x403A4B50);
         String caption = text.plainSubstrByWidth(label.get(), Math.max(0, width - 12));
-        context.drawString(text, caption, x + (width - text.width(caption)) / 2,
+        context.text(text, caption, x + (width - text.width(caption)) / 2,
                 y + (height - text.lineHeight) / 2, available ? TEXT : MUTED, false);
     }
 
     @Override
-    public boolean onMouseDown(double mouseX, double mouseY, int button) {
+    public boolean onMouseDown(MouseButtonEvent click, boolean doubled) {
+        // 只响应左键；能否执行由 activate 统一判断。
+        if (click.button() != 0) {
+            return false;
+        }
+        return activate();
+    }
+
+    @Override
+    public boolean onKeyPress(KeyEvent event) {
+        // 键盘选择与点击执行同一个条件检查。
+        if (event.key() == GLFW.GLFW_KEY_ENTER || event.key() == GLFW.GLFW_KEY_SPACE) {
+            return activate();
+        }
+        return super.onKeyPress(event);
+    }
+
+    private boolean activate() {
         // 不可用阶段禁止重复发起，但服务端仍独立校验并发与容量。
-        if (button != 0 || !enabled.getAsBoolean()) {
+        if (!enabled.getAsBoolean()) {
             return false;
         }
         action.run();
         return true;
-    }
-
-    @Override
-    public boolean onKeyPress(int keyCode, int scanCode, int modifiers) {
-        // 键盘选择与点击执行同一个条件检查。
-        if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_SPACE) {
-            return onMouseDown(0, 0, 0);
-        }
-        return super.onKeyPress(keyCode, scanCode, modifiers);
     }
 
     @Override

@@ -12,7 +12,9 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.permissions.LevelBasedPermissionSet;
+import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import java.nio.file.Files;
@@ -28,9 +30,9 @@ public final class InnerVisionClientTest implements ClientModInitializer {
     private static final int READY_TICKS = 60;
     private static final int FRAME_SETTLE_TICKS = 30;
     private static final int READING_TICKS = 280;
-    private static final int OP_LEVEL = 4;
+    private static final PermissionSet OP_PERMISSIONS = LevelBasedPermissionSet.OWNER;
     private static final int GUI_SCALE = 2;
-    private static final ResourceLocation SCROLL = new ResourceLocation("meridian_progression", "inner_vision_scroll");
+    private static final Identifier SCROLL = Identifier.fromNamespaceAndPath("meridian_progression", "inner_vision_scroll");
     private enum Stage { PREPARE, LOCKED, READ, USE_SCROLL, SCROLL, OPEN, RESET, REOPEN, DONE }
     private Stage stage = Stage.PREPARE;
     private int ticks;
@@ -53,7 +55,7 @@ public final class InnerVisionClientTest implements ClientModInitializer {
         try {
             checkState(++ticks < TIMEOUT_TICKS, "内观客户端验收超时：" + stage);
             if (ticks < READY_TICKS || client.player == null || client.getSingleplayerServer() == null
-                    || client.getOverlay() != null || !ClientProgression.synchronizedWithServer()) {
+                    || client.gui.overlay() != null || !ClientProgression.synchronizedWithServer()) {
                 return;
             }
             switch (stage) {
@@ -80,7 +82,7 @@ public final class InnerVisionClientTest implements ClientModInitializer {
                 .findFirst()
                 .orElseThrow();
         client.options.guiScale().set(GUI_SCALE);
-        client.resizeDisplay();
+        client.resizeGui();
         command = serverCommands(client, "meridian progression unlock", "meridian progression reset inner_vision");
         next(Stage.LOCKED);
     }
@@ -108,22 +110,22 @@ public final class InnerVisionClientTest implements ClientModInitializer {
             return;
         }
         capture(client, "inner-vision-locked.png");
-        client.setScreen(null);
+        client.gui.setScreen(null);
         var server = client.getSingleplayerServer();
         var playerId = client.player.getUUID();
         command = CompletableFuture.runAsync(() -> {
             var player = server.getPlayerList().getPlayer(playerId);
-            player.getInventory().selected = 0;
-            player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(BuiltInRegistries.ITEM.get(SCROLL)));
+            player.getInventory().setSelectedSlot(0);
+            player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(BuiltInRegistries.ITEM.getValue(SCROLL)));
             player.containerMenu.broadcastChanges();
         }, server);
-        client.player.getInventory().selected = 0;
+        client.player.getInventory().setSelectedSlot(0);
         next(Stage.USE_SCROLL);
     }
 
     private void useScroll(Minecraft client) {
         // 等物品同步完成后只发送一次真实右键，不用重复输入促成成功。
-        if (!command.isDone() || !client.player.getMainHandItem().is(BuiltInRegistries.ITEM.get(SCROLL))) {
+        if (!command.isDone() || !client.player.getMainHandItem().is(BuiltInRegistries.ITEM.getValue(SCROLL))) {
             return;
         }
         command.join();
@@ -136,10 +138,10 @@ public final class InnerVisionClientTest implements ClientModInitializer {
         if (!ClientProgression.canInspect() || ticks - stageTick < READING_TICKS) {
             return;
         }
-        checkState(client.screen instanceof ScrollScreen, "真实右键没有打开阅读画面");
+        checkState(client.gui.screen() instanceof ScrollScreen, "真实右键没有打开阅读画面");
         checkState(window.closed(), "读卷后旧锁定窗口未关闭");
         capture(client, "inner-vision-scroll.png");
-        client.screen.onClose();
+        client.gui.screen().onClose();
         next(Stage.OPEN);
     }
 
@@ -187,7 +189,7 @@ public final class InnerVisionClientTest implements ClientModInitializer {
         return CompletableFuture.runAsync(() -> {
             var player = server.getPlayerList().getPlayer(playerId);
             for (String command : commands) {
-                server.getCommands().performPrefixedCommand(player.createCommandSourceStack().withPermission(OP_LEVEL), command);
+                server.getCommands().performPrefixedCommand(player.createCommandSourceStack().withPermission(OP_PERMISSIONS), command);
             }
         }, server);
     }
@@ -200,7 +202,7 @@ public final class InnerVisionClientTest implements ClientModInitializer {
 
     private static void capture(Minecraft client, String name) {
         // 保存帧缓冲原图供人工复核，不用 OCR 推断授权状态。
-        Screenshot.grab(client.gameDirectory, name, client.getMainRenderTarget(), message -> { });
+        Screenshot.grab(client.gameDirectory, name, client.gameRenderer.mainRenderTarget(), 1, message -> { });
     }
 
     private void finish(Minecraft client, String failure) {

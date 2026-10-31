@@ -1,6 +1,6 @@
 package dev.kizuna.meridian.ui.client;
 
-import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.kizuna.playeranimation.animation.AnimationPlayer;
 import dev.kizuna.playeranimation.client.PlayerAnimationClient;
 import dev.kizuna.playeranimation.client.PlayerAssets;
@@ -8,6 +8,7 @@ import dev.kizuna.playeranimation.model.BoneId;
 import dev.kizuna.playeranimation.model.Rig;
 import dev.kizuna.playeranimation.model.SkinnedMesh;
 import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.player.PlayerModelType;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -39,7 +40,7 @@ final class MeditationAvatar {
     static MeditationAvatar create(String animation) {
         // 吐纳要求真实骨架和指定动作，缺资源时直接暴露装配错误。
         var viewer = Minecraft.getInstance().player;
-        boolean slim = viewer != null && "slim".equals(viewer.getModelName());
+        boolean slim = viewer != null && viewer.getSkin().model() == PlayerModelType.SLIM;
         PlayerAssets.Model model = PlayerAnimationClient.ASSETS.model(slim);
         if (model == null || !PlayerAnimationClient.ASSETS.animations().containsKey(animation)) {
             throw UiErrors.invalid(UiErrors.MISSING_MEDITATION_ASSETS + animation);
@@ -88,12 +89,12 @@ final class MeditationAvatar {
         return minimumY;
     }
 
-    void draw(BufferBuilder buffer, Matrix4f matrix) {
+    void draw(VertexConsumer buffer, Matrix4f matrix) {
         // 灰黑半透明材质只改变显示；法线明暗留下关节和盘腿轮廓。
         for (int index = 0; index < vertices.length; index++) {
-            matrix.transformPosition(positions[index * 3], positions[index * 3 + 1], positions[index * 3 + 2], point);
             int shade = shades[index];
-            buffer.vertex(point.x, point.y, point.z).color(shade, shade + 4, shade + 8, 185).endVertex();
+            buffer.addVertex(matrix, positions[index * 3], positions[index * 3 + 1], positions[index * 3 + 2])
+                    .setColor(shade, shade + 4, shade + 8, 185);
         }
     }
 }

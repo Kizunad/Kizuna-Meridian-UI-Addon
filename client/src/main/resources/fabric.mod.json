@@ -11,11 +11,12 @@
     "kizuna_inventory_ui": ["dev.kizuna.meridian.ui.client.BodyUiModule"]
   },
   "depends": {
-    "java": ">=17",
-    "minecraft": "1.20.1",
-    "fabricloader": ">=0.16.10",
+    "java": ">=25",
+    "minecraft": "26.2",
+    "fabricloader": ">=0.20.1",
     "fabric-api": "*",
-    "owo": "0.11.2+1.20",
+    "owo": "0.13.1+26.2",
+    "meridian_framework": "*",
     "kizuna_inventory_ui": "0.1.0-SNAPSHOT",
     "meridian_human_ui": "0.1.0-SNAPSHOT",
     "meridian_human_host": "0.1.0-SNAPSHOT",

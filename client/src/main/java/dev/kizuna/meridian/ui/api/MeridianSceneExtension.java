@@ -3,7 +3,7 @@ package dev.kizuna.meridian.ui.api;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
 import dev.kizuna.meridian.ui.client.BodyCanvas;
 import dev.kizuna.meridian.ui.client.BodyScene;
-import io.wispforest.owo.ui.core.Component;
+import io.wispforest.owo.ui.core.UIComponent;
 
 /** 必装生物表现接线；输入、控件和规则解释归生物附属，UI 只管理窗口生命周期。 */
 public interface MeridianSceneExtension {
@@ -24,7 +24,7 @@ public interface MeridianSceneExtension {
     }
 
     interface Session {
-        Component component();
+        UIComponent component();
         void update(BodySnapshot body);
         boolean keyPress(int key, int modifiers);
         void close();

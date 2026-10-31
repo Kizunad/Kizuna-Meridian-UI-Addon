@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom'
+    id 'net.fabricmc.fabric-loom'
 }
 
 description = '通用身体模型、分层选择与状态展示。'
@@ -7,21 +7,23 @@ description = '通用身体模型、分层选择与状态展示。'
 dependencies {
     // 经脉消息与窗口 API 都是必需编译依赖，运行时由宿主提供对应框架。
     implementation 'local.meridian:client'
+    // 26.x 不混淆：直接用官方名编译，没有映射，模组依赖也不经重映射。
     minecraft libs.minecraft
-    mappings loom.officialMojangMappings()
-    modImplementation libs.fabric.loader
-    modImplementation libs.fabric.api
-    modImplementation libs.owo
-    // 组合进来的 Loom 模组编译取 named 开发 JAR（上游随本仓先行构建），不把框架内嵌进 UI 附属；
+    implementation libs.fabric.loader
+    implementation libs.fabric.api
+    implementation libs.owo
+    // 组合进来的 Loom 模组编译直接取其普通 JAR（上游随本仓先行构建），不把框架内嵌进 UI 附属；
     // 开发运行由完整装配按替换坐标装入，这里不再声明第二份。
-    compileOnly('dev.kizuna.inventoryui:kizuna-inventory-ui-framework') { targetConfiguration = 'namedElements' }
+    compileOnly 'dev.kizuna.inventoryui:kizuna-inventory-ui-framework'
     // 预览直接使用必装动画模组的公开 API。
-    compileOnly('dev.kizuna:kizuna-players-animation') { targetConfiguration = 'namedElements' }
-    compileOnly('dev.kizuna.meridian.progression:client') { targetConfiguration = 'namedElements' }
+    compileOnly 'dev.kizuna:kizuna-players-animation'
+    // 身体界面的 meridian:* 通道只在 Framework 的 Fabric 模组 MeridianChannels 定义一份，界面直接取用。
+    compileOnly 'dev.kizuna.meridian:fabric'
+    compileOnly 'dev.kizuna.meridian.progression:client'
     implementation 'dev.kizuna.meridian.progression:shared'
     testImplementation libs.junit4
-    // 单元测试直接使用 Inventory UI 类型，测试类路径单独补上同一份 named JAR。
-    testImplementation('dev.kizuna.inventoryui:kizuna-inventory-ui-framework') { targetConfiguration = 'namedElements' }
+    // 单元测试直接使用 Inventory UI 类型，测试类路径单独补上同一份 JAR。
+    testImplementation 'dev.kizuna.inventoryui:kizuna-inventory-ui-framework'
     // Loom 开发运行不展开宿主 JAR 的嵌套资源模组，显式装配必需人体展示包；Human 在本仓之上，只在运行时按清单读文件。
     localRuntime files(kizunaWorkspace.artifact('human', 'client', false))
     localRuntime 'local.meridian:server'

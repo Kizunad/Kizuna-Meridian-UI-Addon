@@ -14,6 +14,8 @@ subprojects {
     repositories {
         maven { url = 'https://maven.fabricmc.net/' }
         maven { url = 'https://maven.wispforest.io/releases' }
+        // owo 0.13 依赖的 kdl4j 只发布在 JitPack。
+        maven { url = 'https://jitpack.io' }
         mavenCentral()
     }
     java {
@@ -27,7 +29,7 @@ subprojects {
         options.encoding = 'UTF-8'
     }
     tasks.withType(JavaExec).configureEach {
-        // 游戏演示与正式目标统一使用 Java 17，避免开发机默认版本掩盖兼容问题。
+        // 游戏演示与正式目标统一使用 Java 25，避免开发机默认版本掩盖兼容问题。
         javaLauncher = javaToolchains.launcherFor {
             languageVersion = JavaLanguageVersion.of(libs.versions.java.get())
         }

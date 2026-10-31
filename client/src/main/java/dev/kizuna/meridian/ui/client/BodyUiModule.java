@@ -19,14 +19,15 @@ import dev.kizuna.meridian.protocol.pb.OperationUiMessages.*;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.ResponseEnvelope;
 import dev.kizuna.inventoryui.protocol.UiMessageRouter;
 import dev.kizuna.inventoryui.protocol.UiWire;
-import io.wispforest.owo.ui.component.Components;
-import io.wispforest.owo.ui.core.Component;
+import dev.kizuna.meridian.fabric.MeridianChannels;
+import io.wispforest.owo.ui.component.UIComponents;
+import io.wispforest.owo.ui.core.UIComponent;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
+import net.fabricmc.fabric.api.client.rendering.v1.PictureInPictureRendererRegistry;
 import net.minecraft.client.Minecraft;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import java.io.IOException;
 import java.util.Set;
 import java.util.List;
@@ -35,14 +36,11 @@ import java.util.function.Consumer;
 
 /** 通用窗口入口；宿主提供 Protobuf 身体及生物包的资源标识。 */
 public final class BodyUiModule implements ClientModule {
-    private static final ResourceLocation BODY_VIEW_REQUEST = new ResourceLocation("meridian", "body_view_request");
     private ClientRuntime runtime;
     private WindowKey bodyKey;
     private boolean bodyLocked;
     private WindowKey cultivationKey;
     private boolean cultivationLocked;
-    private static final ResourceLocation HOST_GATHERING_REQUEST = new ResourceLocation("meridian", "gathering_request");
-    private static final ResourceLocation HOST_GATHERING_RESPONSE = new ResourceLocation("meridian", "gathering_response");
     private BodyScene scene;
     private BodySnapshot body;
     private BodyPanel panel;
@@ -93,42 +91,30 @@ public final class BodyUiModule implements ClientModule {
                 && dev.kizuna.meridian.ui.api.MeridianSceneExtension.required().lockedReason().isEmpty());
         ClientProgression.onChanged(this::progressChanged);
         meridians.register(bindings);
-        ClientPlayNetworking.registerGlobalReceiver(new ResourceLocation("meridian", "body_view"),
-                (client, handler, buffer, sender) -> {
-                    // 先限制长度并复制网络缓冲；只读快照在原连接仍有效时交给客户端线程。
-                    if (buffer.readableBytes() == 0 || buffer.readableBytes() > 1024 * 1024) {
-                        return;
-                    }
-                    byte[] payload = new byte[buffer.readableBytes()];
-                    buffer.readBytes(payload);
-                    client.execute(() -> {
-                        if (client.getConnection() == handler) {
-                            receiveBodyView(payload);
-                        }
-                    });
-                });
+        // GUI 渲染器初始化时冻结画中画注册表；模块在客户端入口登记，此时登记身体画布的转交渲染器。
+        PictureInPictureRendererRegistry.register(context -> new BodySceneRenderer());
+        ClientPlayNetworking.registerGlobalReceiver(MeridianChannels.BODY_VIEW.type(), (packet, context) -> {
+            // Fabric 在当前连接的客户端线程回调；空包与超长包直接丢弃，只读快照交给界面。
+            if (MeridianChannels.BODY_VIEW.accepts(packet)) {
+                receiveBodyView(packet.bytes());
+            }
+        });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
             // 断线可从网络线程通知，旧连接的迟到释放也不能清掉新身体。
             if (client.getConnection() == null || client.getConnection() == handler) {
                 clearBody();
             }
         }));
-        ClientPlayNetworking.registerGlobalReceiver(HOST_GATHERING_RESPONSE, (client, handler, buffer, sender) -> {
-            // Fabric 宿主与公共路由使用同一生成消息，拒绝超大包及旧连接迟到回执。
-            if (buffer.readableBytes() == 0 || buffer.readableBytes() > 1024 * 1024) {
+        ClientPlayNetworking.registerGlobalReceiver(MeridianChannels.GATHERING_RESPONSE.type(), (packet, context) -> {
+            // Fabric 宿主与公共路由使用同一生成消息；回调已在当前连接的客户端线程，空包与超长包直接丢弃。
+            if (!MeridianChannels.GATHERING_RESPONSE.accepts(packet)) {
                 return;
             }
-            byte[] payload = new byte[buffer.readableBytes()];
-            buffer.readBytes(payload);
-            client.execute(() -> {
-                if (client.getConnection() == handler) {
-                    try {
-                        receiveGathering(GatheringResponse.parseFrom(payload));
-                    } catch (IOException invalid) {
-                        org.slf4j.LoggerFactory.getLogger("meridian_ui").warn(UiErrors.INVALID_UPDATE, invalid);
-                    }
-                }
-            });
+            try {
+                receiveGathering(GatheringResponse.parseFrom(packet.bytes()));
+            } catch (IOException invalid) {
+                org.slf4j.LoggerFactory.getLogger("meridian_ui").warn(UiErrors.INVALID_UPDATE, invalid);
+            }
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             // 输入租约按客户端 tick 续期，渲染帧率不会改变控制消息的频率。
@@ -161,7 +147,7 @@ public final class BodyUiModule implements ClientModule {
                 return new LockedNotice("吐纳", UiErrors.GATHERING_LOCKED);
             }
             if (scene == null || body == null) {
-                return Components.label(net.minecraft.network.chat.Component.literal(UiErrors.MISSING_BODY));
+                return UIComponents.label(net.minecraft.network.chat.Component.literal(UiErrors.MISSING_BODY));
             }
             cultivationPanel = new CultivationPanel(scene, this::controlBreathing);
             cultivationKey = openedKey;
@@ -182,7 +168,7 @@ public final class BodyUiModule implements ClientModule {
         });
     }
 
-    private Component createBodyWindow(WindowState window) {
+    private UIComponent createBodyWindow(WindowState window) {
         // 整个检视窗口受内观卷授权；锁定通知也记录窗口，进度变化后及时关闭。
         WindowKey openedKey = window.key();
         bodyKey = openedKey;
@@ -196,7 +182,7 @@ public final class BodyUiModule implements ClientModule {
             return new LockedNotice("内观", UiErrors.INNER_VISION_LOCKED);
         }
         if (scene == null || body == null) {
-            return Components.label(net.minecraft.network.chat.Component.literal(UiErrors.MISSING_BODY));
+            return UIComponents.label(net.minecraft.network.chat.Component.literal(UiErrors.MISSING_BODY));
         }
         panel = new BodyPanel(scene, body);
         BodyPanel opened = panel;
@@ -223,7 +209,7 @@ public final class BodyUiModule implements ClientModule {
             if (update.getProtocolVersion() != 1 || !update.hasBody() || update.getBody().getId().isBlank()) {
                 throw UiErrors.invalid(UiErrors.INVALID_UPDATE);
             }
-            ResourceLocation resource = ResourceLocation.tryParse(update.getPresentationResource());
+            Identifier resource = Identifier.tryParse(update.getPresentationResource());
             if (resource == null) {
                 throw UiErrors.invalid(UiErrors.INVALID_UPDATE);
             }
@@ -251,7 +237,7 @@ public final class BodyUiModule implements ClientModule {
         }
     }
 
-    public void present(BodySnapshot snapshot, ResourceLocation resource) {
+    public void present(BodySnapshot snapshot, Identifier resource) {
         // 只接受客户端线程上的宿主交付；资源按 Minecraft 资源管理器查找，支持内容包覆盖。
         if (!Minecraft.getInstance().isSameThread()) {
             throw UiErrors.invalid(UiErrors.WRONG_THREAD);
@@ -306,7 +292,7 @@ public final class BodyUiModule implements ClientModule {
         return meridians.practicePanel();
     }
 
-    public io.wispforest.owo.ui.core.Component openingOperationRoot() {
+    public io.wispforest.owo.ui.core.UIComponent openingOperationRoot() {
         // 宿主可检查操作浮窗的布局；组件仍由窗口 scope 持有和清理。
         return meridians.operationRoot();
     }
@@ -484,8 +470,8 @@ public final class BodyUiModule implements ClientModule {
                 || !ClientProgression.synchronizedWithServer()) {
             return;
         }
-        if (!ClientPlayNetworking.canSend(BODY_VIEW_REQUEST)) {
-            throw new IllegalStateException(UiErrors.REQUIRED_HOST_CHANNEL + BODY_VIEW_REQUEST);
+        if (!ClientPlayNetworking.canSend(MeridianChannels.BODY_VIEW_REQUEST.type())) {
+            throw new IllegalStateException(UiErrors.REQUIRED_HOST_CHANNEL + MeridianChannels.BODY_VIEW_REQUEST.type().id());
         }
         var request = BodyViewRequest.newBuilder()
                 .setProtocolVersion(1)
@@ -493,21 +479,17 @@ public final class BodyUiModule implements ClientModule {
                 .setBodyId(body.getId())
                 .setIntrospection(ClientProgression.canInspect())
                 .build();
-        var buffer = PacketByteBufs.create();
-        buffer.writeBytes(request.toByteArray());
-        ClientPlayNetworking.send(BODY_VIEW_REQUEST, buffer);
+        ClientPlayNetworking.send(MeridianChannels.BODY_VIEW_REQUEST.payload(request.toByteArray()));
     }
 
     private void bindFabricGathering() {
         // 不把缺少必装宿主误表示为只读或等待能力。
-        if (!ClientPlayNetworking.canSend(HOST_GATHERING_REQUEST)) {
-            throw new IllegalStateException(UiErrors.REQUIRED_HOST_CHANNEL + HOST_GATHERING_REQUEST);
+        if (!ClientPlayNetworking.canSend(MeridianChannels.GATHERING_REQUEST.type())) {
+            throw new IllegalStateException(UiErrors.REQUIRED_HOST_CHANNEL + MeridianChannels.GATHERING_REQUEST.type().id());
         }
         bindGathering(request -> {
             // 操作参数来自 UI，身份、时间、摄入量和配方能力仍由逻辑服务器决定。
-            var buffer = PacketByteBufs.create();
-            buffer.writeBytes(request.toByteArray());
-            ClientPlayNetworking.send(HOST_GATHERING_REQUEST, buffer);
+            ClientPlayNetworking.send(MeridianChannels.GATHERING_REQUEST.payload(request.toByteArray()));
         });
     }
 

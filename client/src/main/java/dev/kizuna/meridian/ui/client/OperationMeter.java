@@ -1,14 +1,14 @@
 package dev.kizuna.meridian.ui.client;
 
 import dev.kizuna.meridian.protocol.pb.OperationUiMessages.MeridianOperationMeter;
-import io.wispforest.owo.ui.base.BaseComponent;
-import io.wispforest.owo.ui.core.OwoUIDrawContext;
+import io.wispforest.owo.ui.base.BaseUIComponent;
+import io.wispforest.owo.ui.core.OwoUIGraphics;
 import io.wispforest.owo.ui.core.Sizing;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
 /** 紧凑状态条：实体填充是到账进度，细淡线是入向预约；不逐帧计算身体状态。 */
-final class OperationMeter extends BaseComponent {
+final class OperationMeter extends BaseUIComponent {
     private MeridianOperationMeter meter;
     private double shown;
     private long frame;
@@ -28,7 +28,7 @@ final class OperationMeter extends BaseComponent {
     }
 
     @Override
-    public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
+    public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
         // 平滑填充仅用于展示；状态颜色立即跟随权威条件，临界满格仍能显示等待。
         long now = System.nanoTime();
         double seconds = frame == 0 ? 0 : Math.min(.1, (now - frame) / 1e9);
@@ -41,7 +41,7 @@ final class OperationMeter extends BaseComponent {
             default -> 0xFFB4A47A;
         };
         var font = Minecraft.getInstance().font;
-        context.drawString(font, font.plainSubstrByWidth(meter.getLabel(), Math.max(1, width - 12)), x, y + 1, 0xFFCBD6D1, false);
+        context.text(font, font.plainSubstrByWidth(meter.getLabel(), Math.max(1, width - 12)), x, y + 1, 0xFFCBD6D1, false);
         context.fill(x + width - 5, y + 3, x + width - 1, y + 7, color);
         context.fill(x, y + 17, x + width, y + 22, 0xFF26343A);
         int fill = (int) Math.round(width * shown);

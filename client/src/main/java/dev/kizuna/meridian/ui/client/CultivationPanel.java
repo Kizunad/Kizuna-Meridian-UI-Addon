@@ -7,7 +7,7 @@ import io.wispforest.owo.ui.container.FlowLayout;
 import io.wispforest.owo.ui.parsing.UIModelLoader;
 import java.util.Map;
 import java.util.function.Consumer;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import static dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathAction.*;
 
@@ -27,18 +27,17 @@ public final class CultivationPanel {
     public CultivationPanel(BodyScene scene, Consumer<BreathControl> sender) {
         // XML 提供整幅场景；各控件随后叠加在同一场景内部。
         this.sender = sender;
-        FlowLayout content = UIModelLoader.get(new ResourceLocation("meridian_ui", "cultivation"))
+        FlowLayout content = UIModelLoader.get(Identifier.fromNamespaceAndPath("meridian_ui", "cultivation"))
                 .expandTemplate(FlowLayout.class, "cultivation-panel", Map.of());
         canvas = new BreathingCanvas(scene, sender);
         content.child(canvas);
         ActionRow action = new ActionRow(this::actionLabel, this::canAct, this::act);
         action.id("breathing-start");
         meters = new BreathingMeters(content, action);
-        automatic = io.wispforest.owo.ui.component.Components.checkbox(net.minecraft.network.chat.Component.literal("自动吐纳"));
+        automatic = io.wispforest.owo.ui.component.UIComponents.checkbox(net.minecraft.network.chat.Component.literal("自动吐纳"));
         automatic.id("breathing-automatic");
         automatic.positioning(io.wispforest.owo.ui.core.Positioning.relative(50, 100));
         automatic.margins(io.wispforest.owo.ui.core.Insets.bottom(72));
-        automatic.zIndex(2);
         automatic.onChanged(checked -> {
             // 闲置时只选择下一次模式；活动中提交切换意图，费用由服务器处理。
             if (!syncingAutomatic && this.view != null && this.view.getBreathing().getActive()) {
@@ -47,10 +46,9 @@ public final class CultivationPanel {
             }
         });
         content.child(automatic);
-        // 勾选后在复选框上方常显代价说明，不能只藏在悬浮提示里。
+        // 勾选后在复选框上方常显代价说明，不能只藏在悬浮提示里；复选框与说明最后加入，按子组件顺序绘制在最上层。
         automaticNote.positioning(io.wispforest.owo.ui.core.Positioning.relative(50, 100));
         automaticNote.margins(io.wispforest.owo.ui.core.Insets.bottom(94));
-        automaticNote.zIndex(2);
         content.child(automaticNote);
         root = new ResponsiveLayout(content, (width, height) -> {
             // 说明条随场景宽度收窄，紧凑窗口折成两行仍完整显示停止线和效率；紧凑时纳入量上移，说明条再上移避开它。
@@ -71,7 +69,7 @@ public final class CultivationPanel {
                 breath.getAutomaticMinimumStaminaRatio() * 100, breath.getAutomaticCaptureEfficiency() * 100);
     }
 
-    private final class AutomaticNote extends io.wispforest.owo.ui.base.BaseComponent {
+    private final class AutomaticNote extends io.wispforest.owo.ui.base.BaseUIComponent {
         AutomaticNote() {
             // 宽度由窗口布局调整，高度固定容纳两行说明。
             sizing(io.wispforest.owo.ui.core.Sizing.fixed(420), io.wispforest.owo.ui.core.Sizing.fixed(28));
@@ -85,7 +83,7 @@ public final class CultivationPanel {
         }
 
         @Override
-        public void draw(io.wispforest.owo.ui.core.OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
+        public void draw(io.wispforest.owo.ui.core.OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
             // 只在勾选自动或服务端正在自动时显示，未勾选不占用场景。
             if (view == null || !view.hasBreathing() || !automatic.selected()) {
                 return;
@@ -95,7 +93,7 @@ public final class CultivationPanel {
             var lines = font.split(net.minecraft.network.chat.Component.literal(automaticDescription()), Math.max(1, width - 12));
             for (int line = 0; line < Math.min(2, lines.size()); line++) {
                 var wrapped = lines.get(line);
-                context.drawString(font, wrapped, x + (width - font.width(wrapped)) / 2, y + 4 + line * 11, 0xFF9BF2B8, false);
+                context.text(font, wrapped, x + (width - font.width(wrapped)) / 2, y + 4 + line * 11, 0xFF9BF2B8, false);
             }
         }
     }

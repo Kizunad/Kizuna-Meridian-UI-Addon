@@ -1,13 +1,13 @@
 package dev.kizuna.meridian.ui.client;
 
-import io.wispforest.owo.ui.base.BaseComponent;
-import io.wispforest.owo.ui.core.OwoUIDrawContext;
+import io.wispforest.owo.ui.base.BaseUIComponent;
+import io.wispforest.owo.ui.core.OwoUIGraphics;
 import io.wispforest.owo.ui.core.Sizing;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
 /** 未解锁窗口的统一提示卡；只展示客户端投影给出的原因，实际权限仍由服务端裁定。 */
-final class LockedNotice extends BaseComponent {
+final class LockedNotice extends BaseUIComponent {
     private static final int BACKGROUND = 0xFF0B1115;
     private static final int SHACKLE = 0xFFB9C3C0;
     private static final int LOCK_BODY = 0xFFE0B55A;
@@ -28,7 +28,7 @@ final class LockedNotice extends BaseComponent {
     }
 
     @Override
-    public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
+    public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
         // 锁形图标、标题、找卷说明自上而下居中，窗口缩放后仍完整可读。
         var font = Minecraft.getInstance().font;
         context.fill(x, y, x + width, y + height, BACKGROUND);
@@ -44,12 +44,12 @@ final class LockedNotice extends BaseComponent {
         var lines = font.split(Component.literal(reason), Math.max(40, width - 48));
         for (int line = 0; line < lines.size(); line++) {
             var wrapped = lines.get(line);
-            context.drawString(font, wrapped, centerX - font.width(wrapped) / 2, top + 66 + line * LINE_HEIGHT,
+            context.text(font, wrapped, centerX - font.width(wrapped) / 2, top + 66 + line * LINE_HEIGHT,
                     BODY_TEXT, false);
         }
     }
 
-    private static void lock(OwoUIDrawContext context, int centerX, int top) {
+    private static void lock(OwoUIGraphics context, int centerX, int top) {
         // 用像素块画一把锁，不依赖额外贴图，也不会被资源包替换成别的含义。
         context.fill(centerX - 8, top, centerX + 8, top + 3, SHACKLE);
         context.fill(centerX - 8, top, centerX - 5, top + 14, SHACKLE);

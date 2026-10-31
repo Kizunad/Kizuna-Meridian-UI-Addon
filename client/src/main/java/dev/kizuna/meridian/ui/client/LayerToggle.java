@@ -1,16 +1,18 @@
 package dev.kizuna.meridian.ui.client;
 
-import io.wispforest.owo.ui.base.BaseComponent;
+import io.wispforest.owo.ui.base.BaseUIComponent;
 import io.wispforest.owo.ui.core.CursorStyle;
-import io.wispforest.owo.ui.core.OwoUIDrawContext;
+import io.wispforest.owo.ui.core.OwoUIGraphics;
 import io.wispforest.owo.ui.core.Sizing;
 import java.util.function.BooleanSupplier;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
 /** 身体查看器自己的勾选行；不使用原版按钮纹理与控件。 */
-final class LayerToggle extends BaseComponent {
+final class LayerToggle extends BaseUIComponent {
     private final String label;
     private final BooleanSupplier checked;
     private final Runnable toggle;
@@ -26,23 +28,23 @@ final class LayerToggle extends BaseComponent {
     }
 
     @Override
-    public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
+    public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
         // 平面勾选框与画布使用同一色系；文字和方框都属于一个点击目标。
         boolean enabled = checked.getAsBoolean();
         context.fill(x, y, x + width, y + height, hovered ? 0xFF283B42 : 0xFF1B2A31);
         int color = enabled ? 0xFFE3C37B : 0xFF80979F;
-        context.renderOutline(x + 7, y + 8, 10, 10, color);
+        context.outline(x + 7, y + 8, 10, 10, color);
         if (enabled) {
             context.fill(x + 10, y + 11, x + 14, y + 15, color);
         }
         var font = Minecraft.getInstance().font;
-        context.drawString(font, font.plainSubstrByWidth(label, Math.max(0, width - 26)), x + 24, y + 9, color, false);
+        context.text(font, font.plainSubstrByWidth(label, Math.max(0, width - 26)), x + 24, y + 9, color, false);
     }
 
     @Override
-    public boolean onMouseDown(double mouseX, double mouseY, int button) {
+    public boolean onMouseDown(MouseButtonEvent click, boolean doubled) {
         // 一次按下只切换一层，其余层保留勾选状态。
-        if (button != 0) {
+        if (click.button() != 0) {
             return false;
         }
         toggle.run();
@@ -50,13 +52,13 @@ final class LayerToggle extends BaseComponent {
     }
 
     @Override
-    public boolean onKeyPress(int keyCode, int scanCode, int modifiers) {
+    public boolean onKeyPress(KeyEvent event) {
         // 键盘聚焦后使用空格或回车，与鼠标操作走同一条状态更新路径。
-        if (keyCode == GLFW.GLFW_KEY_SPACE || keyCode == GLFW.GLFW_KEY_ENTER) {
+        if (event.key() == GLFW.GLFW_KEY_SPACE || event.key() == GLFW.GLFW_KEY_ENTER) {
             toggle.run();
             return true;
         }
-        return super.onKeyPress(keyCode, scanCode, modifiers);
+        return super.onKeyPress(event);
     }
 
     @Override

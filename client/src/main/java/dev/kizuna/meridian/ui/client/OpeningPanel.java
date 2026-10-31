@@ -3,7 +3,7 @@ package dev.kizuna.meridian.ui.client;
 import dev.kizuna.inventoryui.client.component.ResponsiveLayout;
 import io.wispforest.owo.ui.component.LabelComponent;
 import io.wispforest.owo.ui.container.FlowLayout;
-import io.wispforest.owo.ui.core.Component;
+import io.wispforest.owo.ui.core.UIComponent;
 import io.wispforest.owo.ui.parsing.UIModelLoader;
 import java.util.Map;
 import java.util.List;
@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import dev.kizuna.meridian.protocol.pb.OperationUiMessages.*;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 /** 附属共用紧凑条形浮窗，选择和执行分开，操作栏始终留在底部。 */
@@ -34,7 +34,7 @@ final class OpeningPanel {
                  Supplier<String> choiceCaption, BooleanSupplier hasChoices, Runnable choose, Runnable focus) {
         // XML 管理布局槽，所有附属共享相同卡片结构和输入方式。
         this.hasChoices = hasChoices;
-        content = UIModelLoader.get(new ResourceLocation("meridian_ui", "opening"))
+        content = UIModelLoader.get(Identifier.fromNamespaceAndPath("meridian_ui", "opening"))
                 .expandTemplate(FlowLayout.class, "opening-detail", Map.of());
         statusSlot = content.childById(FlowLayout.class, "status");
         statusText = statusSlot.childById(LabelComponent.class, "status-text");
@@ -50,16 +50,16 @@ final class OpeningPanel {
         action.id("opening-action");
         content.childById(FlowLayout.class, "operation").child(action);
         for (ActionRow control : List.of(choice, action)) {
-            control.keyPress().subscribe((key, scan, modifiers) -> {
+            control.keyPress().subscribe(event -> {
                 // 焦点留在操作浮窗时，F 和 G 仍操作同一场景与权威任务。
-                if (modifiers != 0) {
+                if (event.modifiers() != 0) {
                     return false;
                 }
-                if (key == GLFW.GLFW_KEY_F) {
+                if (event.key() == GLFW.GLFW_KEY_F) {
                     focus.run();
                     return true;
                 }
-                if (key == GLFW.GLFW_KEY_G) {
+                if (event.key() == GLFW.GLFW_KEY_G) {
                     if (enabled.getAsBoolean()) {
                         start.run();
                     }
@@ -74,13 +74,13 @@ final class OpeningPanel {
 
     private void arrange(int width, int height) {
         // 紧凑视口只保留状态条、进度条和动作入口，多个附属可复用同一布局。
-        MeridianPanel.place(content.childById(Component.class, "selection-title"), 8, 8, width - 16, 14);
-        MeridianPanel.place(content.childById(Component.class, "status"), 8, 25, width - 16, 14);
+        MeridianPanel.place(content.childById(UIComponent.class, "selection-title"), 8, 8, width - 16, 14);
+        MeridianPanel.place(content.childById(UIComponent.class, "status"), 8, 25, width - 16, 14);
         boolean multiple = hasChoices.getAsBoolean();
         int top = multiple ? 78 : 46;
         int bottom = 62;
-        MeridianPanel.place(content.childById(Component.class, "details"), 8, top, width - 16, height - top - bottom);
-        MeridianPanel.place(content.childById(Component.class, "feedback"), 8, height - bottom + 2, width - 16, 20);
+        MeridianPanel.place(content.childById(UIComponent.class, "details"), 8, top, width - 16, height - top - bottom);
+        MeridianPanel.place(content.childById(UIComponent.class, "feedback"), 8, height - bottom + 2, width - 16, 20);
         int buttonWidth = Math.min(200, width - 16);
         if (multiple != choiceShown) {
             choiceShown = multiple;
@@ -91,7 +91,7 @@ final class OpeningPanel {
             }
         }
         MeridianPanel.place(choiceSlot, (width - buttonWidth) / 2, 43, buttonWidth, 30);
-        MeridianPanel.place(content.childById(Component.class, "operation"), (width - buttonWidth) / 2,
+        MeridianPanel.place(content.childById(UIComponent.class, "operation"), (width - buttonWidth) / 2,
                 height - 38, buttonWidth, 30);
     }
 
@@ -155,7 +155,7 @@ final class OpeningPanel {
     void focusActions() {
         // 窗口挂载后提供初始键盘落点；不覆盖用户通过 Tab 选中的其他控件。
         if (root.focusHandler() != null && root.focusHandler().focused() == null) {
-            root.focusHandler().focus(action, Component.FocusSource.MOUSE_CLICK);
+            root.focusHandler().focus(action, UIComponent.FocusSource.MOUSE_CLICK);
         }
     }
 }
