@@ -2,7 +2,7 @@
 
 「身体 → 检视」与练习窗口分开授权：入口 `meridian_ui:body` 始终在菜单中，整个窗口要求札记与内观残卷。未解锁返回统一 `LockedNotice`；重置内观立即关窗、释放面板并撤销内部视图订阅。Human 在 `BODY_VIEW_REQUEST` 再次检查身体归属和这两个已读位。四卷获取及命令见 Progression 的 `Scroll.md`，修炼创造栏按残卷、内观、聚气、中焦排列。
 
-本仓只有 `client/server`，没有 `fabric` 子项目。`./gradlew test build` 验证本仓单测与产物；`ALSOFT_DRIVERS=null xvfb-run -a ./gradlew :client:runInnerVisionTest` 在完整装配的隔离客户端验证窗口行为。服务端内观协议 GameTest 归 Human 的 `:fabric:runGametest`，物品与创造栏 GameTest 归 Progression 同名任务。
+本仓只有 `client/server`，没有 `fabric` 子项目。`./gradlew test build` 验证本仓单测与产物；`env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 ALSOFT_DRIVERS=null xvfb-run -a -s "-screen 0 1280x960x24" ./gradlew :client:runInnerVisionTest` 在完整装配的隔离客户端验证窗口行为。Linux 无显示环境统一清掉 `DISPLAY`、`WAYLAND_DISPLAY` 并用 Xvfb 加 Mesa 软件渲染（`LIBGL_ALWAYS_SOFTWARE=1`，llvmpipe）：26.2 客户端在 WSLg 有显示时会卡在 `glfwShowWindow`，Xvfb 下默认的 Mesa d3d12 驱动在退出时让 JVM 崩溃，Gradle 判为失败。服务端内观协议 GameTest 归 Human 的 `:fabric:runGametest`，物品与创造栏 GameTest 归 Progression 同名任务。
 
 内观新增必需的 `MeridianSceneExtension` 客户端接线，提供标题、锁定原因、组件、快照更新、按键优先权与关窗清理。Human-UI负责人体玩法；`BodyCanvas.effects`只投影模型空间实线圆环（`Marker` 的半径与线宽均为屏幕像素，颜色含义由附属决定）和光团颜色。修炼页的独立练习入口（`meridian_ui:practice`）要求札记权限且 `lockedReason()` 为空；未解锁时从菜单隐藏，直接打开也被拒绝。窗口工厂再次校验，保留统一锁形提示卡（`LockedNotice`）用于锁定提示；撤权关闭已有窗口并停止活动。吐纳入口独立要求聚气卷，经脉入口要求札记，真实右键对应残卷并收到权威同步后显示相应菜单项，无须看完。练习控件固定占场景底部 144 逻辑像素。`QiTransit.circuit` 按整圈线路和权威工作进度显示，普通运输仍按单段到达插值。不会通过 Framework 通用协议传人体坐标。
 
@@ -83,8 +83,8 @@ Human Addon 由宿主装配人体内容，客户端通过必需的 Human-UI 与 
 2026-10-22 起本仓不再提供标题画面 demo 源集（原 `runDemo` 及 `uiSmoke`、`gatheringSmoke`、`responsiveSmoke` 三种验收模式）。修炼入口与内部层由 Progression 服务端授权，标题画面没有服务器无法打开，且客户端不得自行解锁。原检查点改在 `Kizuna-Meridian-Human-UI-Addon` 的整合服 smoke 中、在真实玩家身体上执行：
 
 ```bash
-# 在 Human-UI 仓库运行；Linux 无窗口环境加 xvfb-run，Windows 直接运行 gradlew.bat。
-xvfb-run -a -s "-screen 0 1920x1100x24" ./gradlew :client:runSmoke --offline --console=plain --no-watch-fs
+# 在 Human-UI 仓库运行；Linux 无窗口环境用 Xvfb 加软件渲染，Windows 直接运行 gradlew.bat。
+env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1920x1100x24" ./gradlew :client:runSmoke --offline --console=plain --no-watch-fs
 ```
 
 | 原检查点 | 现由整合服 smoke 承担 |

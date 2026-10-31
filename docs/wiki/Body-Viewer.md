@@ -55,4 +55,4 @@
 
 窗口初始层由内容包的 `default_layer_id` 决定，Human 为只显示体表的 `surface`；整个窗口须右键使用《炁脉札记》和内观残卷并收到权威同步后才能打开，无须看完。当前窗口为只读展示，不发送身体改造或修炼命令。
 
-新增隔离客户端验收：先在 Progression 运行 `./gradlew :fabric:runGametest` 准备测试世界，再在本仓运行 `ALSOFT_DRIVERS=null xvfb-run -a ./gradlew :client:runInnerVisionTest`。测试真实菜单可见性、LockedNotice、物品右键与正文资源、解锁人体面板、骨架层、单卷重置关窗和重开锁定；报告为 `client/build/inner-vision-results.txt`，截图保留在测试运行目录。
+新增隔离客户端验收：先在 Progression 运行 `./gradlew :fabric:runGametest` 准备测试世界，再在本仓运行 `env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 ALSOFT_DRIVERS=null xvfb-run -a -s "-screen 0 1280x960x24" ./gradlew :client:runInnerVisionTest`。测试真实菜单可见性、LockedNotice、物品右键与正文资源、解锁人体面板、骨架层、单卷重置关窗和重开锁定；报告为 `client/build/inner-vision-results.txt`，截图保留在测试运行目录。

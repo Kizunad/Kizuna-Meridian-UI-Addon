@@ -87,6 +87,6 @@
 python3 "scripts/check_docs.py"
 ```
 
-内观客户端 smoke 统一由同级 `Kizuna-Meridian-Human-UI-Addon` 提供：在该仓运行 `xvfb-run -a ./gradlew :client:runSmoke --offline --console=plain --no-watch-fs`。它强制装配 UI、Human 与 Human-UI，检查真实人体模型、人中交叉光尾及移除在途后的清理。完整构建顺序见[构建与依赖](Integration.md)。
+内观客户端 smoke 统一由同级 `Kizuna-Meridian-Human-UI-Addon` 提供：在该仓运行 `env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1920x1100x24" ./gradlew :client:runSmoke --offline --console=plain --no-watch-fs`。它强制装配 UI、Human 与 Human-UI，检查真实人体模型、人中交叉光尾及移除在途后的清理。完整构建顺序见[构建与依赖](Integration.md)。
 
 UI 整体回归保护命名空间隔离、过期卡禁用、唯一分账、原始摄入与实际到货区分，以及开脉结果去重、重连历史基线和计时重置反馈；人体门槛与固定任务规则由 Human/Framework 验证。2026-10-20 已在 WN 独立单机存档通过正常吐纳、持续15秒成功开脉、三视图、预警、暂停及 OP 完成验收。具体入口和关键帧见 Human-UI 的 Integration 文档。
