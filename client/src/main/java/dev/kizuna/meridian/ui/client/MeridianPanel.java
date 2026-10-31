@@ -8,9 +8,9 @@ import io.wispforest.owo.ui.core.Component;
 import io.wispforest.owo.ui.core.Positioning;
 import io.wispforest.owo.ui.core.Sizing;
 import io.wispforest.owo.ui.parsing.UIModelLoader;
-import net.minecraft.util.Identifier;
 import java.util.Map;
 import java.util.function.Consumer;
+import net.minecraft.resources.ResourceLocation;
 import org.lwjgl.glfw.GLFW;
 
 /** 站姿经脉场景；点击选中高亮，快捷键负责聚焦与权威操作。 */
@@ -31,7 +31,7 @@ public final class MeridianPanel {
         // 使用生物包的表层和经脉模型，保持站姿，不借用吐纳盘坐动画。
         this.scene = scene;
         this.selection = selection;
-        content = UIModelLoader.get(new Identifier("meridian_ui", "opening"))
+        content = UIModelLoader.get(new ResourceLocation("meridian_ui", "opening"))
                 .expandTemplate(FlowLayout.class, "meridian-panel", Map.of());
         content.childById(FlowLayout.class, "info").child(new MeridianInfo());
         canvas = new BodyCanvas(scene, this::clicked, () -> {
@@ -42,7 +42,7 @@ public final class MeridianPanel {
         extension = practice ? provider.create(scene, canvas) : null;
         if (practice) {
             content.childById(io.wispforest.owo.ui.component.LabelComponent.class, "title")
-                    .text(net.minecraft.text.Text.literal(provider.title()));
+                    .text(net.minecraft.network.chat.Component.literal(provider.title()));
             content.child(extension.component());
             canvas.onDispose(extension::close);
         }

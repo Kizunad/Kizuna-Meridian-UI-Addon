@@ -12,12 +12,11 @@ import io.wispforest.owo.ui.parsing.UIModelLoader;
 import io.wispforest.owo.ui.core.Component;
 import io.wispforest.owo.ui.core.Positioning;
 import io.wispforest.owo.ui.core.Sizing;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
 import java.util.List;
 import java.util.Map;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import net.minecraft.resources.ResourceLocation;
 
 /** XML 持有组件树，Java 按内容尺寸排布并绑定生物资源与选择状态。 */
 public final class BodyPanel {
@@ -46,7 +45,7 @@ public final class BodyPanel {
         scene.requireTemplate(body);
         this.scene = scene;
         this.body = body;
-        content = UIModelLoader.get(new Identifier("meridian_ui", "body"))
+        content = UIModelLoader.get(new ResourceLocation("meridian_ui", "body"))
                 .expandTemplate(FlowLayout.class, "body-panel", Map.of());
         information = content.childById(LabelComponent.class, "information");
         canvas = new BodyCanvas(scene, this::select, this::overview);
@@ -181,10 +180,10 @@ public final class BodyPanel {
         if (selected == null) {
             String instructions = "检视\n\n点击体表查看部位介绍、血量与状态。\n\n可切换渲染层查看内部。\n"
                     + "外层会自然遮挡内部，取消勾选即可逐层查看。";
-            information.text(Text.literal(summary + instructions));
+            information.text(net.minecraft.network.chat.Component.literal(summary + instructions));
             return;
         }
-        information.text(Text.literal(summary + String.join("\n", BodyInformation.lines(body, selected))));
+        information.text(net.minecraft.network.chat.Component.literal(summary + String.join("\n", BodyInformation.lines(body, selected))));
     }
 
     public void select(BodyVisual node) {

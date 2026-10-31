@@ -1,7 +1,13 @@
 package dev.kizuna.meridian.ui.client;
 
+import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.systems.VertexSorter;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.BufferUploader;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexSorting;
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.*;
 import dev.kizuna.meridian.protocol.pb.GatheringMessages.GatheringView;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
@@ -10,10 +16,9 @@ import io.wispforest.owo.ui.core.OwoUIDrawContext;
 import io.wispforest.owo.ui.core.Component.FocusSource;
 import io.wispforest.owo.ui.core.Sizing;
 import io.wispforest.owo.ui.util.ScissorStack;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.SimpleFramebuffer;
-import net.minecraft.client.render.*;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.network.chat.Component;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -50,7 +55,7 @@ public final class BreathingCanvas extends BaseComponent {
     private final MeditationAvatar avatar;
     private final OpeningOverlay openingOverlay;
     private int openingParticles;
-    private SimpleFramebuffer framebuffer;
+    private TextureTarget framebuffer;
     private BreathAction held = HOLD;
     private Vector3f aim = new Vector3f(.5f, .4f, .75f);
     private long heartbeatNanos;
@@ -97,7 +102,7 @@ public final class BreathingCanvas extends BaseComponent {
         if (!view.getActive()) {
             held = HOLD;
         }
-        audio.update(view, view.getAutomatic() ? view.getAction() : held, tutorial || rotating || !MinecraftClient.getInstance().isWindowFocused());
+        audio.update(view, view.getAutomatic() ? view.getAction() : held, tutorial || rotating || !Minecraft.getInstance().isWindowActive());
     }
 
     public void tutorial(boolean visible) {
@@ -127,7 +132,7 @@ public final class BreathingCanvas extends BaseComponent {
         meshes.clear();
         audio.close();
         if (framebuffer != null) {
-            framebuffer.delete();
+            framebuffer.destroyBuffers();
             framebuffer = null;
         }
     }
@@ -141,11 +146,11 @@ public final class BreathingCanvas extends BaseComponent {
     public void tickInput() {
         // 自动由服务器持续驱动，无需手动心跳；切换桌面焦点不会结束自动练习。
         long now = System.nanoTime();
-        audio.update(view, view.getAutomatic() ? view.getAction() : held, tutorial || rotating || !MinecraftClient.getInstance().isWindowFocused());
+        audio.update(view, view.getAutomatic() ? view.getAction() : held, tutorial || rotating || !Minecraft.getInstance().isWindowActive());
         if (!view.getActive() || view.getAutomatic() || tutorial || now - heartbeatNanos < 250_000_000L) {
             return;
         }
-        if (!MinecraftClient.getInstance().isWindowFocused()) {
+        if (!Minecraft.getInstance().isWindowActive()) {
             stopInput();
         } else {
             send(held);
@@ -164,7 +169,7 @@ public final class BreathingCanvas extends BaseComponent {
         }
         shownAir += (view.getAirLiters() - shownAir) * (1 - Math.exp(-seconds * 14));
         double airRatio = view.getCapacityLiters() > 0 ? shownAir / view.getCapacityLiters() : 0;
-        context.draw();
+        context.flush();
         ScissorStack.drawUnclipped(() -> renderScene(airRatio));
         context.enableScissor(x, y, x + width, y + height);
         composite(context);
@@ -172,29 +177,29 @@ public final class BreathingCanvas extends BaseComponent {
         if (tutorial) {
             drawTutorial(context);
         }
-        context.draw();
+        context.flush();
         context.disableScissor();
     }
 
     private void renderScene(double airRatio) {
         // 窗口独立清理颜色和深度，不清除工作台或其他窗口的深度缓冲。
-        MinecraftClient client = MinecraftClient.getInstance();
-        double guiScale = client.getWindow().getScaleFactor();
+        Minecraft client = Minecraft.getInstance();
+        double guiScale = client.getWindow().getGuiScale();
         int pixelsWide = Math.max(1, (int) Math.ceil(width * guiScale));
         int pixelsHigh = Math.max(1, (int) Math.ceil(height * guiScale));
         if (framebuffer == null) {
-            framebuffer = new SimpleFramebuffer(pixelsWide, pixelsHigh, true, MinecraftClient.IS_SYSTEM_MAC);
+            framebuffer = new TextureTarget(pixelsWide, pixelsHigh, true, Minecraft.ON_OSX);
             framebuffer.setClearColor(.012f, .02f, .027f, 1);
-        } else if (framebuffer.textureWidth != pixelsWide || framebuffer.textureHeight != pixelsHigh) {
-            framebuffer.resize(pixelsWide, pixelsHigh, MinecraftClient.IS_SYSTEM_MAC);
+        } else if (framebuffer.width != pixelsWide || framebuffer.height != pixelsHigh) {
+            framebuffer.resize(pixelsWide, pixelsHigh, Minecraft.ON_OSX);
         }
-        framebuffer.clear(MinecraftClient.IS_SYSTEM_MAC);
-        framebuffer.beginWrite(true);
+        framebuffer.clear(Minecraft.ON_OSX);
+        framebuffer.bindWrite(true);
         RenderSystem.backupProjectionMatrix();
-        RenderSystem.setProjectionMatrix(camera.projection(aspect()), VertexSorter.BY_DISTANCE);
+        RenderSystem.setProjectionMatrix(camera.projection(aspect()), VertexSorting.DISTANCE_TO_ORIGIN);
         var modelView = RenderSystem.getModelViewStack();
-        modelView.push();
-        modelView.loadIdentity();
+        modelView.pushPose();
+        modelView.setIdentity();
         RenderSystem.applyModelViewMatrix();
         RenderSystem.setShaderColor(1, 1, 1, 1);
         RenderSystem.enableBlend();
@@ -219,10 +224,10 @@ public final class BreathingCanvas extends BaseComponent {
             RenderSystem.depthMask(true);
             RenderSystem.disableDepthTest();
             RenderSystem.enableCull();
-            modelView.pop();
+            modelView.popPose();
             RenderSystem.applyModelViewMatrix();
             RenderSystem.restoreProjectionMatrix();
-            client.getFramebuffer().beginWrite(true);
+            client.getMainRenderTarget().bindWrite(true);
             RenderSystem.defaultBlendFunc();
         }
     }
@@ -230,16 +235,16 @@ public final class BreathingCanvas extends BaseComponent {
     private void composite(OwoUIDrawContext context) {
         // 离屏结果作为 z=0 背景，文字和教学随后由 owo 正常合成。
         RenderSystem.disableDepthTest();
-        RenderSystem.setShader(GameRenderer::getPositionTexProgram);
-        RenderSystem.setShaderTexture(0, framebuffer.getColorAttachment());
-        Matrix4f matrix = context.getMatrices().peek().getPositionMatrix();
-        BufferBuilder buffer = Tessellator.getInstance().getBuffer();
-        buffer.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE);
-        buffer.vertex(matrix, x, y + height, 0).texture(0, 0).next();
-        buffer.vertex(matrix, x + width, y + height, 0).texture(1, 0).next();
-        buffer.vertex(matrix, x + width, y, 0).texture(1, 1).next();
-        buffer.vertex(matrix, x, y, 0).texture(0, 1).next();
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        RenderSystem.setShader(GameRenderer::getPositionTexShader);
+        RenderSystem.setShaderTexture(0, framebuffer.getColorTextureId());
+        Matrix4f matrix = context.pose().last().pose();
+        BufferBuilder buffer = Tesselator.getInstance().getBuilder();
+        buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
+        buffer.vertex(matrix, x, y + height, 0).uv(0, 0).endVertex();
+        buffer.vertex(matrix, x + width, y + height, 0).uv(1, 0).endVertex();
+        buffer.vertex(matrix, x + width, y, 0).uv(1, 1).endVertex();
+        buffer.vertex(matrix, x, y, 0).uv(0, 1).endVertex();
+        BufferUploader.drawWithShader(buffer.end());
     }
 
     private void drawFloor(Matrix4f matrix, float floorY) {
@@ -250,25 +255,25 @@ public final class BreathingCanvas extends BaseComponent {
         for (int ring = 5; ring >= 0; ring--) {
             float radius = .50f + ring * .08f;
             for (int point = 0; point < 48; point++) {
-                buffer.vertex(matrix, 0, floorY - .01f, 0).color(27, 48, 52, 12).next();
+                buffer.vertex(matrix, 0, floorY - .01f, 0).color(27, 48, 52, 12).endVertex();
                 buffer.vertex(matrix, CIRCLE_X[point] * radius, floorY - .01f, CIRCLE_Y[point] * radius)
-                        .color(27, 48, 52, 12).next();
+                        .color(27, 48, 52, 12).endVertex();
                 buffer.vertex(matrix, CIRCLE_X[point + 1] * radius, floorY - .01f, CIRCLE_Y[point + 1] * radius)
-                        .color(27, 48, 52, 12).next();
+                        .color(27, 48, 52, 12).endVertex();
             }
         }
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        BufferUploader.drawWithShader(buffer.end());
     }
 
     private void drawBody(Matrix4f matrix, double airRatio) {
         // 表层使用透视与深度，肺随后透视高亮并随胸部骨骼伸缩。
         RenderSystem.enableDepthTest();
         RenderSystem.depthMask(true);
-        BufferBuilder buffer = Tessellator.getInstance().getBuffer();
-        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-        buffer.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        BufferBuilder buffer = Tesselator.getInstance().getBuilder();
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
         avatar.draw(buffer, matrix);
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        BufferUploader.drawWithShader(buffer.end());
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
         for (BodyVisual organ : organs) {
@@ -325,7 +330,7 @@ public final class BreathingCanvas extends BaseComponent {
                 || (displayedAction == EXHALE && view.getAirLiters() > 0))) {
             drawAirflow(buffer, viewMatrix, displayedAction);
         }
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        BufferUploader.drawWithShader(buffer.end());
     }
 
     private void drawAirflow(BufferBuilder buffer, Matrix4f viewMatrix, BreathAction displayedAction) {
@@ -364,40 +369,40 @@ public final class BreathingCanvas extends BaseComponent {
 
     private void drawText(OwoUIDrawContext context) {
         // 文字在场景纹理之后绘制，模型和底座不占用前景图层。
-        var font = MinecraftClient.getInstance().textRenderer;
+        var font = Minecraft.getInstance().font;
         String hint = view.getActive() ? "左吸 · 右呼 · 中键旋转 · 滚轮缩放" : "中键旋转 · 滚轮缩放";
         if (view.getActive() && view.getAutomatic()) {
             // 自动模式由服务端吸呼，提示里不再要求玩家按左右键。
             hint = "自动吸呼中 · 中键旋转 · 滚轮缩放";
         }
-        hint = font.trimToWidth(hint, Math.max(0, width - 24));
-        context.drawText(font, hint, x + (width - font.getWidth(hint)) / 2, y + height - 18, 0xFF81928F, false);
+        hint = font.plainSubstrByWidth(hint, Math.max(0, width - 24));
+        context.drawString(font, hint, x + (width - font.width(hint)) / 2, y + height - 18, 0xFF81928F, false);
     }
 
     private void drawTutorial(OwoUIDrawContext context) {
         // 教学随场景宽度换行，紧凑窗口精简措辞，底部仍留出开始按钮的位置。
         context.fill(x, y, x + width, y + height, 0xB0000000);
-        var font = MinecraftClient.getInstance().textRenderer;
+        var font = Minecraft.getInstance().font;
         int textWidth = Math.max(1, Math.min(286, width - 40));
         String instructions = "左键吸气，右键呼气，松开停气。\n气流带动全场灵气，近处更强且有惯性。\n中键旋转，滚轮缩放。\n肺满需呼气，留意耐力与精力。";
-        var lines = font.wrapLines(Text.literal(instructions), textWidth);
-        int lineHeight = font.fontHeight + 2;
-        int textHeight = font.fontHeight + 6 + lines.size() * lineHeight;
+        var lines = font.split(Component.literal(instructions), textWidth);
+        int lineHeight = font.lineHeight + 2;
+        int textHeight = font.lineHeight + 6 + lines.size() * lineHeight;
         int left = x + (width - textWidth) / 2;
         int top = y + Math.max(8, (height - 54 - textHeight) / 2);
         context.fill(left - 8, top - 6, left + textWidth + 8, top + textHeight + 6, 0xF0101D21);
         context.fill(left - 8, top - 6, left - 6, top + textHeight + 6, 0xFFA3D7C9);
-        context.drawText(font, "第一次吐纳 · 手动引导气息", left, top, 0xFFE5DEC9, false);
+        context.drawString(font, "第一次吐纳 · 手动引导气息", left, top, 0xFFE5DEC9, false);
         for (int index = 0; index < lines.size(); index++) {
-            context.drawText(font, lines.get(index), left, top + font.fontHeight + 6 + index * lineHeight, 0xFFACBFBC, false);
+            context.drawString(font, lines.get(index), left, top + font.lineHeight + 6 + index * lineHeight, 0xFFACBFBC, false);
         }
     }
 
     private static BufferBuilder beginTriangles() {
         // 亮点与细流线共用顶点批次，避免逐粒子发起绘制。
-        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-        BufferBuilder buffer = Tessellator.getInstance().getBuffer();
-        buffer.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        BufferBuilder buffer = Tesselator.getInstance().getBuilder();
+        buffer.begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.POSITION_COLOR);
         return buffer;
     }
 
@@ -411,12 +416,12 @@ public final class BreathingCanvas extends BaseComponent {
         }
         float offsetX = -dy / length * halfWidth;
         float offsetY = dx / length * halfWidth;
-        buffer.vertex(from.x - offsetX, from.y - offsetY, from.z).color(color).next();
-        buffer.vertex(to.x - offsetX, to.y - offsetY, to.z).color(color).next();
-        buffer.vertex(to.x + offsetX, to.y + offsetY, to.z).color(color).next();
-        buffer.vertex(from.x - offsetX, from.y - offsetY, from.z).color(color).next();
-        buffer.vertex(to.x + offsetX, to.y + offsetY, to.z).color(color).next();
-        buffer.vertex(from.x + offsetX, from.y + offsetY, from.z).color(color).next();
+        buffer.vertex(from.x - offsetX, from.y - offsetY, from.z).color(color).endVertex();
+        buffer.vertex(to.x - offsetX, to.y - offsetY, to.z).color(color).endVertex();
+        buffer.vertex(to.x + offsetX, to.y + offsetY, to.z).color(color).endVertex();
+        buffer.vertex(from.x - offsetX, from.y - offsetY, from.z).color(color).endVertex();
+        buffer.vertex(to.x + offsetX, to.y + offsetY, to.z).color(color).endVertex();
+        buffer.vertex(from.x + offsetX, from.y + offsetY, from.z).color(color).endVertex();
     }
 
     private static final class ParticleDisplay {
@@ -462,9 +467,9 @@ public final class BreathingCanvas extends BaseComponent {
         for (int point = 0; point < 12; point++) {
             int start = point * 4;
             int end = start + 4;
-            buffer.vertex(eye.x, eye.y, eye.z).color(color).next();
-            buffer.vertex(eye.x + CIRCLE_X[start] * radius, eye.y + CIRCLE_Y[start] * radius, eye.z).color(color).next();
-            buffer.vertex(eye.x + CIRCLE_X[end] * radius, eye.y + CIRCLE_Y[end] * radius, eye.z).color(color).next();
+            buffer.vertex(eye.x, eye.y, eye.z).color(color).endVertex();
+            buffer.vertex(eye.x + CIRCLE_X[start] * radius, eye.y + CIRCLE_Y[start] * radius, eye.z).color(color).endVertex();
+            buffer.vertex(eye.x + CIRCLE_X[end] * radius, eye.y + CIRCLE_Y[end] * radius, eye.z).color(color).endVertex();
         }
     }
 

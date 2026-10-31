@@ -2,12 +2,12 @@ package dev.kizuna.meridian.ui.client;
 
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathAction;
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathingView;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.sound.AbstractSoundInstance;
-import net.minecraft.client.sound.TickableSoundInstance;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.random.Random;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.sounds.AbstractSoundInstance;
+import net.minecraft.client.resources.sounds.TickableSoundInstance;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.RandomSource;
 
 import static dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathAction.*;
 
@@ -35,12 +35,12 @@ final class BreathingAudio {
             stop();
             return;
         }
-        var manager = MinecraftClient.getInstance().getSoundManager();
+        var manager = Minecraft.getInstance().getSoundManager();
         if (sound != null) {
             manager.stop(sound);
         }
         String path = desired == INHALE ? "breathing.inhale" : "breathing.exhale";
-        sound = new BreathSound(new Identifier("meridian_ui", path));
+        sound = new BreathSound(new ResourceLocation("meridian_ui", path));
         action = desired;
         manager.play(sound);
     }
@@ -56,7 +56,7 @@ final class BreathingAudio {
     void close() {
         // 关窗立刻释放自己的声音，不影响游戏中的其他音效。
         if (sound != null) {
-            MinecraftClient.getInstance().getSoundManager().stop(sound);
+            Minecraft.getInstance().getSoundManager().stop(sound);
             sound = null;
         }
         action = HOLD;
@@ -67,13 +67,13 @@ final class BreathingAudio {
         private float targetVolume = MAX_VOLUME;
         private boolean done;
 
-        BreathSound(Identifier id) {
+        BreathSound(ResourceLocation id) {
             // 界面声音不随相机距离衰减，沿用玩家音效音量设置；轻声循环支持持续吸呼。
-            super(id, SoundCategory.PLAYERS, Random.create());
-            repeat = true;
-            repeatDelay = 0;
+            super(id, SoundSource.PLAYERS, RandomSource.create());
+            looping = true;
+            delay = 0;
             relative = true;
-            attenuationType = AttenuationType.NONE;
+            attenuation = Attenuation.NONE;
             volume = .01f;
             pitch = 1;
         }
@@ -95,7 +95,7 @@ final class BreathingAudio {
         }
 
         @Override
-        public boolean isDone() {
+        public boolean isStopped() {
             // 将播放生命周期交给 Minecraft，关闭窗口还会主动停止同一实例。
             return done;
         }

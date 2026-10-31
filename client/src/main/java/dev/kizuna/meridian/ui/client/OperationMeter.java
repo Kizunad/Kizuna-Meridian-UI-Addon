@@ -4,8 +4,8 @@ import dev.kizuna.meridian.protocol.pb.OperationUiMessages.MeridianOperationMete
 import io.wispforest.owo.ui.base.BaseComponent;
 import io.wispforest.owo.ui.core.OwoUIDrawContext;
 import io.wispforest.owo.ui.core.Sizing;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 
 /** 紧凑状态条：实体填充是到账进度，细淡线是入向预约；不逐帧计算身体状态。 */
 final class OperationMeter extends BaseComponent {
@@ -24,7 +24,7 @@ final class OperationMeter extends BaseComponent {
     void update(MeridianOperationMeter value) {
         // 提示解释操作原因，不把整页重新变成数值清单。
         meter = value;
-        tooltip(Text.literal(value.getHint()));
+        tooltip(Component.literal(value.getHint()));
     }
 
     @Override
@@ -40,8 +40,8 @@ final class OperationMeter extends BaseComponent {
             case METER_BLOCKED -> 0xFFCF8E83;
             default -> 0xFFB4A47A;
         };
-        var font = MinecraftClient.getInstance().textRenderer;
-        context.drawText(font, font.trimToWidth(meter.getLabel(), Math.max(1, width - 12)), x, y + 1, 0xFFCBD6D1, false);
+        var font = Minecraft.getInstance().font;
+        context.drawString(font, font.plainSubstrByWidth(meter.getLabel(), Math.max(1, width - 12)), x, y + 1, 0xFFCBD6D1, false);
         context.fill(x + width - 5, y + 3, x + width - 1, y + 7, color);
         context.fill(x, y + 17, x + width, y + 22, 0xFF26343A);
         int fill = (int) Math.round(width * shown);

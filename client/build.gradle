@@ -8,7 +8,7 @@ dependencies {
     // 经脉消息与窗口 API 都是必需编译依赖，运行时由宿主提供对应框架。
     implementation 'local.meridian:client'
     minecraft libs.minecraft
-    mappings "net.fabricmc:yarn:${libs.versions.yarn.get()}:v2"
+    mappings loom.officialMojangMappings()
     modImplementation libs.fabric.loader
     modImplementation libs.fabric.api
     modImplementation libs.owo

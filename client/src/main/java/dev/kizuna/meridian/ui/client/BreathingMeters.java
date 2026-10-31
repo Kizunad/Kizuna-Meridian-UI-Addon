@@ -11,16 +11,15 @@ import io.wispforest.owo.ui.core.Insets;
 import io.wispforest.owo.ui.core.OwoUIDrawContext;
 import io.wispforest.owo.ui.core.Positioning;
 import io.wispforest.owo.ui.core.Sizing;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
 import java.util.List;
 import java.util.Locale;
+import net.minecraft.client.Minecraft;
+import net.minecraft.resources.ResourceLocation;
 
 /** 场景内的资源控件；每个控件独立命中，空白处仍交给三维相机与气息操作。 */
 final class BreathingMeters {
-    private static final Identifier LUNGS = new Identifier("meridian_ui", "textures/gui/lungs.png");
-    private static final Identifier AIR = new Identifier("meridian_ui", "textures/gui/lungs_air.png");
+    private static final ResourceLocation LUNGS = new ResourceLocation("meridian_ui", "textures/gui/lungs.png");
+    private static final ResourceLocation AIR = new ResourceLocation("meridian_ui", "textures/gui/lungs_air.png");
     private static final int AIR_TOP = 20;
     private static final int AIR_BOTTOM = 54;
     static final int COMPACT_WIDTH = 420;
@@ -65,21 +64,21 @@ final class BreathingMeters {
         // 快照到达时刷新提示与总账，逐帧仅绘制空气插值，不重复汇总身体明细。
         if (view == null || !view.hasBreathing()) {
             breath = BreathingView.getDefaultInstance();
-            action.tooltip(Text.literal(error.isEmpty() ? UiErrors.BREATHING_UNAVAILABLE : error));
-            air.tooltip(List.<Text>of());
-            reserve.tooltip(List.<Text>of());
-            qi.tooltip(List.<Text>of());
+            action.tooltip(net.minecraft.network.chat.Component.literal(error.isEmpty() ? UiErrors.BREATHING_UNAVAILABLE : error));
+            air.tooltip(List.<net.minecraft.network.chat.Component>of());
+            reserve.tooltip(List.<net.minecraft.network.chat.Component>of());
+            qi.tooltip(List.<net.minecraft.network.chat.Component>of());
             return;
         }
         breath = view.getBreathing();
-        air.tooltip(List.of(Text.literal(String.format(Locale.ROOT, "空气 %.1f / %.1f L",
+        air.tooltip(List.of(net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "空气 %.1f / %.1f L",
                 breath.getAirLiters(), breath.getCapacityLiters()))));
         double remainingRatio = breath.getAutomatic() ? breath.getStaminaRatio()
                 : Math.min(breath.getStaminaRatio(), breath.getAttentionRatio());
         reserve.tooltip(List.of(
-                Text.literal(String.format(Locale.ROOT, "维持 %.0f%%", remainingRatio * 100)),
-                Text.literal(String.format(Locale.ROOT, "横膈肌耐力 %.0f%%", breath.getStaminaRatio() * 100)),
-                Text.literal(String.format(Locale.ROOT, "精力 %.0f%%", breath.getAttentionRatio() * 100))));
+                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "维持 %.0f%%", remainingRatio * 100)),
+                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "横膈肌耐力 %.0f%%", breath.getStaminaRatio() * 100)),
+                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "精力 %.0f%%", breath.getAttentionRatio() * 100))));
 
         // 每个账户各计一次；在途占用目的容量，不能再增加最大值。
         BodySnapshot body = view.getBody();
@@ -99,13 +98,13 @@ final class BreathingMeters {
         double inTransitQi = body.getTransitsList().stream()
                 .filter(transit -> outputRoutes.contains(transit.getConnectionId()))
                 .flatMap(transit -> transit.getCargo().getEntriesList().stream()).mapToDouble(Qi::getAmount).sum();
-        var qiDetails = new java.util.ArrayList<Text>(List.of(
-                Text.literal(String.format(Locale.ROOT, "本次连接摄入灵气 %.2f 元", breath.getAbsorbedQi())),
-                Text.literal(String.format(Locale.ROOT, "炼化后累计入脉 %.2f 元", breath.getStoredQi())),
-                Text.literal(String.format(Locale.ROOT, "呼吸器官缓存 %.2f 元 · 运往经脉 %.2f 元", bufferedQi, inTransitQi)),
-                Text.literal(String.format(Locale.ROOT, "当前经脉内腔 %.2f 元", QiDisplay.lumen(body))),
-                Text.literal(String.format(Locale.ROOT, "身体总真元量 %.2f 元", totalQi)),
-                Text.literal(String.format(Locale.ROOT, "最大真元量 %.2f 元", maximumQi))));
+        var qiDetails = new java.util.ArrayList<net.minecraft.network.chat.Component>(List.of(
+                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "本次连接摄入灵气 %.2f 元", breath.getAbsorbedQi())),
+                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "炼化后累计入脉 %.2f 元", breath.getStoredQi())),
+                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "呼吸器官缓存 %.2f 元 · 运往经脉 %.2f 元", bufferedQi, inTransitQi)),
+                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "当前经脉内腔 %.2f 元", QiDisplay.lumen(body))),
+                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "身体总真元量 %.2f 元", totalQi)),
+                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "最大真元量 %.2f 元", maximumQi))));
 
         String visibleError = error;
         if (visibleError.isEmpty() && breath.getFailureValue() != 0) {
@@ -114,11 +113,11 @@ final class BreathingMeters {
         String feedback = breath.getStatus();
         if (!visibleError.isEmpty()) {
             feedback = visibleError;
-            qiDetails.add(Text.literal(visibleError));
+            qiDetails.add(net.minecraft.network.chat.Component.literal(visibleError));
         }
         qi.tooltip(qiDetails);
         // 详细状态随按钮悬浮显示，底部始终只保留操作按钮和相机提示。
-        action.tooltip(Text.literal(feedback));
+        action.tooltip(net.minecraft.network.chat.Component.literal(feedback));
     }
 
     private final class AirGauge extends BaseComponent {
@@ -143,18 +142,18 @@ final class BreathingMeters {
             // 填充从肺底升到肺顶，透明外边距不计入空气量的显示高度。
             int fillHeight = (int) Math.round((AIR_BOTTOM - AIR_TOP) * Math.max(0, Math.min(1, shownRatio)));
             int fillTop = AIR_BOTTOM - fillHeight;
-            context.drawTexture(LUNGS, left, y, 0, 0, 64, 64, 64, 64);
-            context.draw();
+            context.blit(LUNGS, left, y, 0, 0, 64, 64, 64, 64);
+            context.flush();
             RenderSystem.enableBlend();
             RenderSystem.setShaderColor(.47f, .77f, .93f, .85f);
             if (fillHeight > 0) {
-                context.drawTexture(AIR, left, y + fillTop, 0, fillTop, 64, fillHeight, 64, 64);
+                context.blit(AIR, left, y + fillTop, 0, fillTop, 64, fillHeight, 64, 64);
             }
-            context.draw();
+            context.flush();
             RenderSystem.setShaderColor(1, 1, 1, 1);
-            var font = MinecraftClient.getInstance().textRenderer;
+            var font = Minecraft.getInstance().font;
             String caption = String.format(Locale.ROOT, "空气 %.0f%%", ratio * 100);
-            context.drawText(font, caption, x + (width - font.getWidth(caption)) / 2, y + 73, 0xFF8DBBD3, false);
+            context.drawString(font, caption, x + (width - font.width(caption)) / 2, y + 73, 0xFF8DBBD3, false);
         }
     }
 
@@ -170,11 +169,11 @@ final class BreathingMeters {
             // 总余力取先耗尽的一项，避免另一项仍高时掩盖实际限制。
             double remainingRatio = breath.getAutomatic() ? breath.getStaminaRatio()
                     : Math.min(breath.getStaminaRatio(), breath.getAttentionRatio());
-            var font = MinecraftClient.getInstance().textRenderer;
+            var font = Minecraft.getInstance().font;
             // 自动吐纳只看呼吸耐力，标题直接写明，并画出服务端停止线。
             String label = breath.getAutomatic()
                     ? String.format(Locale.ROOT, "呼吸耐力 %.0f%%（不耗精力）", breath.getStaminaRatio() * 100) : "余力";
-            context.drawText(font, font.trimToWidth(label, width), x, y, 0xFFD5B878, false);
+            context.drawString(font, font.plainSubstrByWidth(label, width), x, y, 0xFFD5B878, false);
             context.fill(x, y + 16, x + width, y + 20, 0xFF272A26);
             int fillWidth = (int) Math.round(width * Math.max(0, Math.min(1, remainingRatio)));
             context.fill(x, y + 16, x + fillWidth, y + 20, 0xFFD5B878);
@@ -182,7 +181,7 @@ final class BreathingMeters {
                 int stopX = x + (int) Math.round(width * breath.getAutomaticMinimumStaminaRatio());
                 context.fill(stopX, y + 13, stopX + 1, y + 23, 0xFFFF5858);
                 String stop = String.format(Locale.ROOT, "低于%.0f%%自动停", breath.getAutomaticMinimumStaminaRatio() * 100);
-                context.drawText(font, stop, Math.min(x + width - font.getWidth(stop), stopX - font.getWidth(stop) / 2),
+                context.drawString(font, stop, Math.min(x + width - font.width(stop), stopX - font.width(stop) / 2),
                         y, 0xFFFF8A80, false);
             }
         }
@@ -198,9 +197,9 @@ final class BreathingMeters {
         @Override
         public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
             // 纳入量保留两位，能看出每次小批吐纳的变化。
-            var font = MinecraftClient.getInstance().textRenderer;
+            var font = Minecraft.getInstance().font;
             String caption = String.format(Locale.ROOT, "纳入 %.2f 真元", breath.getStoredQi());
-            context.drawText(font, font.trimToWidth(caption, width), x, y + 8, 0xFFA8C8C0, false);
+            context.drawString(font, font.plainSubstrByWidth(caption, width), x, y + 8, 0xFFA8C8C0, false);
         }
     }
 }

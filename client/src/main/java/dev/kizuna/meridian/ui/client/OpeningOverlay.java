@@ -1,16 +1,21 @@
 package dev.kizuna.meridian.ui.client;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.BufferUploader;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
 import dev.kizuna.meridian.ui.api.OpeningEffectProvider;
 import dev.kizuna.meridian.ui.api.OpeningEffectProvider.Node;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.*;
-import net.minecraft.client.sound.PositionedSoundInstance;
-import net.minecraft.sound.SoundEvent;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvent;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import java.util.*;
@@ -45,8 +50,8 @@ final class OpeningOverlay {
         if (!events.isEmpty()) {
             boolean completed = events.stream().anyMatch(event -> event.outcome() == OpeningFeedback.Outcome.COMPLETED);
             String sound = completed ? "opening.complete" : "opening.interrupted";
-            MinecraftClient.getInstance().getSoundManager().play(PositionedSoundInstance.master(
-                    SoundEvent.of(new Identifier("meridian_ui", sound)), 1, .38f));
+            Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(
+                    SoundEvent.createVariableRangeEvent(new ResourceLocation("meridian_ui", sound)), 1, .38f));
         }
     }
 
@@ -104,12 +109,12 @@ final class OpeningOverlay {
         boolean reduced = EffectSettings.reducedMotion();
         int particleBudget = reduced ? 0 : Math.min(16, EffectSettings.particleLimit());
         int emitted = 0;
-        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
         RenderSystem.setShaderColor(1, 1, 1, 1);
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
-        BufferBuilder buffer = Tessellator.getInstance().getBuffer();
-        buffer.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        BufferBuilder buffer = Tesselator.getInstance().getBuilder();
+        buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
         for (MeridianState state : body.getMeridianStatesList()) {
             String id = state.getId();
             BodyVisual visual = visuals.get(id);
@@ -184,7 +189,7 @@ final class OpeningOverlay {
                 emitted += count;
             }
         }
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        BufferUploader.drawWithShader(buffer.end());
         return emitted;
     }
 
@@ -199,19 +204,19 @@ final class OpeningOverlay {
         float x = -dy / length * radius;
         float y = dx / length * radius;
         int argb = alpha << 24 | color;
-        buffer.vertex(a.x - x, a.y - y, a.z).color(argb).next();
-        buffer.vertex(b.x - x, b.y - y, b.z).color(argb).next();
-        buffer.vertex(b.x + x, b.y + y, b.z).color(argb).next();
-        buffer.vertex(a.x + x, a.y + y, a.z).color(argb).next();
+        buffer.vertex(a.x - x, a.y - y, a.z).color(argb).endVertex();
+        buffer.vertex(b.x - x, b.y - y, b.z).color(argb).endVertex();
+        buffer.vertex(b.x + x, b.y + y, b.z).color(argb).endVertex();
+        buffer.vertex(a.x + x, a.y + y, a.z).color(argb).endVertex();
     }
 
     private static void diamond(BufferBuilder buffer, Vector3f p, float r, int alpha, int color) {
         // 前沿的菱形与普通流光可从形状区分，静态模式仍保留前沿。
         int argb = alpha << 24 | color;
-        buffer.vertex(p.x - r, p.y, p.z).color(argb).next();
-        buffer.vertex(p.x, p.y - r, p.z).color(argb).next();
-        buffer.vertex(p.x + r, p.y, p.z).color(argb).next();
-        buffer.vertex(p.x, p.y + r, p.z).color(argb).next();
+        buffer.vertex(p.x - r, p.y, p.z).color(argb).endVertex();
+        buffer.vertex(p.x, p.y - r, p.z).color(argb).endVertex();
+        buffer.vertex(p.x + r, p.y, p.z).color(argb).endVertex();
+        buffer.vertex(p.x, p.y + r, p.z).color(argb).endVertex();
     }
 
     private static final class Path {

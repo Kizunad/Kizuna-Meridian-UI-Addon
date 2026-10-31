@@ -4,10 +4,10 @@ import io.wispforest.owo.ui.base.BaseComponent;
 import io.wispforest.owo.ui.core.CursorStyle;
 import io.wispforest.owo.ui.core.OwoUIDrawContext;
 import io.wispforest.owo.ui.core.Sizing;
-import net.minecraft.client.MinecraftClient;
 import org.lwjgl.glfw.GLFW;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
+import net.minecraft.client.Minecraft;
 
 /** 与分层勾选框一致的平面操作行，鼠标和键盘共享执行入口。 */
 final class ActionRow extends BaseComponent {
@@ -33,7 +33,7 @@ final class ActionRow extends BaseComponent {
     @Override
     public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
         // 少量同心描边按缓慢周期改变透明度，黄光仅作提示，不创建粒子或离屏缓冲。
-        var text = MinecraftClient.getInstance().textRenderer;
+        var text = Minecraft.getInstance().font;
         boolean available = enabled.getAsBoolean();
         double ageSeconds = (System.nanoTime() - createdNanos) / 1e9;
         double glow = EffectSettings.reducedMotion() ? .5 : .5 + .5 * Math.sin(ageSeconds * Math.PI / 2);
@@ -46,9 +46,9 @@ final class ActionRow extends BaseComponent {
         }
         context.fill(x + 3, y + 3, x + width - 3, y + height - 3, hovered ? HOVER : BACKGROUND);
         context.drawRectOutline(x + 3, y + 3, width - 6, height - 6, available ? 0x807D6F45 : 0x403A4B50);
-        String caption = text.trimToWidth(label.get(), Math.max(0, width - 12));
-        context.drawText(text, caption, x + (width - text.getWidth(caption)) / 2,
-                y + (height - text.fontHeight) / 2, available ? TEXT : MUTED, false);
+        String caption = text.plainSubstrByWidth(label.get(), Math.max(0, width - 12));
+        context.drawString(text, caption, x + (width - text.width(caption)) / 2,
+                y + (height - text.lineHeight) / 2, available ? TEXT : MUTED, false);
     }
 
     @Override

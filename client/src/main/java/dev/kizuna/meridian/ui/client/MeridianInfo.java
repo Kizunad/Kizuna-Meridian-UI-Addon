@@ -3,15 +3,15 @@ package dev.kizuna.meridian.ui.client;
 import io.wispforest.owo.ui.base.BaseComponent;
 import io.wispforest.owo.ui.core.OwoUIDrawContext;
 import io.wispforest.owo.ui.core.Sizing;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 
 /** 标题旁的圆形信息入口，快捷键只在悬浮时显示。 */
 final class MeridianInfo extends BaseComponent {
     MeridianInfo() {
         // 自绘圆环避免依赖字体是否包含圆形 i，也保持与场景控件一致的外观。
         sizing(Sizing.fixed(18), Sizing.fixed(18));
-        tooltip(Text.literal("F - Focus\nG - 凝聚真元 / 暂停"));
+        tooltip(Component.literal("F - Focus\nG - 凝聚真元 / 暂停"));
     }
 
     @Override
@@ -29,7 +29,7 @@ final class MeridianInfo extends BaseComponent {
             context.fill(centerX - outer, centerY + offset, centerX - inner + 1, centerY + offset + 1, color);
             context.fill(centerX + inner, centerY + offset, centerX + outer + 1, centerY + offset + 1, color);
         }
-        var text = MinecraftClient.getInstance().textRenderer;
-        context.drawText(text, "i", centerX - text.getWidth("i") / 2, centerY - 4, color, false);
+        var text = Minecraft.getInstance().font;
+        context.drawString(text, "i", centerX - text.width("i") / 2, centerY - 4, color, false);
     }
 }

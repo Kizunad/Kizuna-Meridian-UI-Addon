@@ -1,7 +1,13 @@
 package dev.kizuna.meridian.ui.client;
 
+import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.systems.VertexSorter;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.BufferUploader;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexSorting;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
 import dev.kizuna.inventoryui.client.component.ModelPreviewCamera;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
@@ -9,13 +15,12 @@ import dev.kizuna.meridian.ui.api.MeridianRouteProvider;
 import io.wispforest.owo.ui.base.BaseComponent;
 import io.wispforest.owo.ui.core.OwoUIDrawContext;
 import io.wispforest.owo.ui.core.Sizing;
-import net.minecraft.client.render.*;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.gl.SimpleFramebuffer;
 import io.wispforest.owo.ui.util.ScissorStack;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
@@ -35,7 +40,7 @@ public final class BodyCanvas extends BaseComponent {
     private final Consumer<BodyVisual> selection;
     private final Runnable showOverview;
     private final ModelPreviewCamera camera = new ModelPreviewCamera();
-    private final Box bounds;
+    private final AABB bounds;
     private List<BodyVisual> sourceVisible = List.of();
     private List<BodyVisual> visible = List.of();
     private boolean slimSkin;
@@ -49,7 +54,7 @@ public final class BodyCanvas extends BaseComponent {
     private final Map<String, Double> openingProgress = new HashMap<>();
     private final Map<String, Double> storedFraction = new HashMap<>();
     private final Map<String, Float> shownBrightness = new HashMap<>();
-    private SimpleFramebuffer openingFramebuffer;
+    private TextureTarget openingFramebuffer;
     private List<Marker> markers = List.of();
     private int transitColor = 0xFFFFE48A;
 
@@ -75,9 +80,9 @@ public final class BodyCanvas extends BaseComponent {
         openingOverlay = new OpeningOverlay(scene);
         ModelPoint minimum = scene.presentation().getMinimum();
         ModelPoint maximum = scene.presentation().getMaximum();
-        bounds = new Box(minimum.getX(), minimum.getY(), minimum.getZ(), maximum.getX(), maximum.getY(), maximum.getZ());
+        bounds = new AABB(minimum.getX(), minimum.getY(), minimum.getZ(), maximum.getX(), maximum.getY(), maximum.getZ());
         sizing(Sizing.fill(100), Sizing.fill(100));
-        camera.focus(new Vec3d(0.5, 0.5, 0.5), 1, 0, 0, false);
+        camera.focus(new Vec3(0.5, 0.5, 0.5), 1, 0, 0, false);
         camera.settle();
     }
 
@@ -87,7 +92,7 @@ public final class BodyCanvas extends BaseComponent {
         meshes.values().forEach(BodyMesh::close);
         meshes.clear();
         if (openingFramebuffer != null) {
-            openingFramebuffer.delete();
+            openingFramebuffer.destroyBuffers();
             openingFramebuffer = null;
         }
     }
@@ -154,9 +159,9 @@ public final class BodyCanvas extends BaseComponent {
         }
         Vector3f center = new Vector3f(minimum).add(maximum).mul(0.5f);
         double extent = Math.max(maximum.x - minimum.x, Math.max(maximum.y - minimum.y, maximum.z - minimum.z));
-        float zoom = (float) Math.min(4, Math.max(1.2, bounds.getYLength() * 0.5 / Math.max(0.05, extent)));
-        Vec3d normalized = new Vec3d((center.x - bounds.minX) / bounds.getXLength(),
-                (center.y - bounds.minY) / bounds.getYLength(), (center.z - bounds.minZ) / bounds.getZLength());
+        float zoom = (float) Math.min(4, Math.max(1.2, bounds.getYsize() * 0.5 / Math.max(0.05, extent)));
+        Vec3 normalized = new Vec3((center.x - bounds.minX) / bounds.getXsize(),
+                (center.y - bounds.minY) / bounds.getYsize(), (center.z - bounds.minZ) / bounds.getZsize());
         // 自动转向模型所在的前后侧，避免选中背部肌肉后仍被正面几何遮住。
         float yaw = center.z < -0.02f ? 180 : 0;
         camera.focus(normalized, zoom, yaw, 0, false);
@@ -165,7 +170,7 @@ public final class BodyCanvas extends BaseComponent {
     public void overview() {
         // 返回全身只改变相机与高亮，身体状态不受影响。
         selectedId = "";
-        camera.focus(new Vec3d(0.5, 0.5, 0.5), 1, 0, 0, false);
+        camera.focus(new Vec3(0.5, 0.5, 0.5), 1, 0, 0, false);
     }
 
     public ModelPreviewCamera camera() {
@@ -175,8 +180,8 @@ public final class BodyCanvas extends BaseComponent {
 
     private void refreshAppearance() {
         // Minecraft 自身管理皮肤加载；臂型变化时才重建几何，普通帧复用原有 GPU 缓冲。
-        MinecraftClient client = MinecraftClient.getInstance();
-        boolean currentSlim = client.player != null && "slim".equals(client.player.getModel());
+        Minecraft client = Minecraft.getInstance();
+        boolean currentSlim = client.player != null && "slim".equals(client.player.getModelName());
         if (currentSlim != slimSkin) {
             slimSkin = currentSlim;
             meshes.values().forEach(BodyMesh::close);
@@ -202,7 +207,7 @@ public final class BodyCanvas extends BaseComponent {
     private Matrix4f modelTransform() {
         // 绘制与命中共享相同矩阵，防止缩放、旋转或聚焦后选错部位。
         float scale = camera.scale(bounds, width, height);
-        Vec3d center = camera.center(bounds);
+        Vec3 center = camera.center(bounds);
         return new Matrix4f().translation(width / 2f, height / 2f, 0)
                 .scale(scale, -scale, scale * DEPTH_SCALE)
                 .rotateX((float) Math.toRadians(camera.pitch())).rotateY((float) Math.toRadians(camera.yaw()))
@@ -225,9 +230,9 @@ public final class BodyCanvas extends BaseComponent {
             return;
         }
         context.fill(x, y, x + width, y + height, BACKGROUND);
-        context.draw();
+        context.flush();
         context.enableScissor(x, y, x + width, y + height);
-        Matrix4f matrix = new Matrix4f(context.getMatrices().peek().getPositionMatrix())
+        Matrix4f matrix = new Matrix4f(context.pose().last().pose())
                 .translate(x, y, 150).mul(modelTransform());
         RenderSystem.enableDepthTest();
         RenderSystem.enableBlend();
@@ -266,43 +271,43 @@ public final class BodyCanvas extends BaseComponent {
 
     private void drawOpening(OwoUIDrawContext context, long now, float elapsedSeconds) {
         // 模型使用独立深度缓冲；合成后正常绘制说明和浮窗，不让三维深度压住文字。
-        context.draw();
+        context.flush();
         ScissorStack.drawUnclipped(() -> renderOpening(now, elapsedSeconds));
         context.enableScissor(x, y, x + width, y + height);
         RenderSystem.disableDepthTest();
-        RenderSystem.setShader(GameRenderer::getPositionTexProgram);
-        RenderSystem.setShaderTexture(0, openingFramebuffer.getColorAttachment());
-        Matrix4f matrix = context.getMatrices().peek().getPositionMatrix();
-        BufferBuilder buffer = Tessellator.getInstance().getBuffer();
-        buffer.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE);
-        buffer.vertex(matrix, x, y + height, 0).texture(0, 0).next();
-        buffer.vertex(matrix, x + width, y + height, 0).texture(1, 0).next();
-        buffer.vertex(matrix, x + width, y, 0).texture(1, 1).next();
-        buffer.vertex(matrix, x, y, 0).texture(0, 1).next();
-        BufferRenderer.drawWithGlobalProgram(buffer.end());
+        RenderSystem.setShader(GameRenderer::getPositionTexShader);
+        RenderSystem.setShaderTexture(0, openingFramebuffer.getColorTextureId());
+        Matrix4f matrix = context.pose().last().pose();
+        BufferBuilder buffer = Tesselator.getInstance().getBuilder();
+        buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
+        buffer.vertex(matrix, x, y + height, 0).uv(0, 0).endVertex();
+        buffer.vertex(matrix, x + width, y + height, 0).uv(1, 0).endVertex();
+        buffer.vertex(matrix, x + width, y, 0).uv(1, 1).endVertex();
+        buffer.vertex(matrix, x, y, 0).uv(0, 1).endVertex();
+        BufferUploader.drawWithShader(buffer.end());
         context.disableScissor();
     }
 
     private void renderOpening(long now, float elapsedSeconds) {
         // 离屏分辨率跟随窗口；静态网格上传一次，逐帧只改变相机、颜色和少量光点。
-        MinecraftClient client = MinecraftClient.getInstance();
-        double scale = client.getWindow().getScaleFactor();
+        Minecraft client = Minecraft.getInstance();
+        double scale = client.getWindow().getGuiScale();
         int pixelsWide = Math.max(1, (int) Math.ceil(width * scale));
         int pixelsHigh = Math.max(1, (int) Math.ceil(height * scale));
         if (openingFramebuffer == null) {
-            openingFramebuffer = new SimpleFramebuffer(pixelsWide, pixelsHigh, true, MinecraftClient.IS_SYSTEM_MAC);
+            openingFramebuffer = new TextureTarget(pixelsWide, pixelsHigh, true, Minecraft.ON_OSX);
             openingFramebuffer.setClearColor(.055f, .07f, .085f, 1);
-        } else if (openingFramebuffer.textureWidth != pixelsWide || openingFramebuffer.textureHeight != pixelsHigh) {
-            openingFramebuffer.resize(pixelsWide, pixelsHigh, MinecraftClient.IS_SYSTEM_MAC);
+        } else if (openingFramebuffer.width != pixelsWide || openingFramebuffer.height != pixelsHigh) {
+            openingFramebuffer.resize(pixelsWide, pixelsHigh, Minecraft.ON_OSX);
         }
-        openingFramebuffer.clear(MinecraftClient.IS_SYSTEM_MAC);
-        openingFramebuffer.beginWrite(true);
+        openingFramebuffer.clear(Minecraft.ON_OSX);
+        openingFramebuffer.bindWrite(true);
         RenderSystem.backupProjectionMatrix();
         RenderSystem.setProjectionMatrix(new Matrix4f().setOrtho(0, Math.max(1, width), Math.max(1, height), 0, -1000, 1000),
-                VertexSorter.BY_DISTANCE);
+                VertexSorting.DISTANCE_TO_ORIGIN);
         var view = RenderSystem.getModelViewStack();
-        view.push();
-        view.loadIdentity();
+        view.pushPose();
+        view.setIdentity();
         RenderSystem.applyModelViewMatrix();
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
@@ -343,9 +348,9 @@ public final class BodyCanvas extends BaseComponent {
             int openingParticles = openingOverlay.draw(matrix, null, meridianIds, now, .85f, false);
             int remainingParticles = EffectSettings.particleLimit() - openingParticles;
             // 各类装饰共用画布上限，减少动态时撤掉流动光尾，保留静态路线与关口。
-            RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-            BufferBuilder buffer = Tessellator.getInstance().getBuffer();
-            buffer.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+            RenderSystem.setShader(GameRenderer::getPositionColorShader);
+            BufferBuilder buffer = Tesselator.getInstance().getBuilder();
+            buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
             for (MeridianFlow.Flight flight : flow.flights()) {
                 if (EffectSettings.reducedMotion() || remainingParticles <= 0) {
                     break;
@@ -360,10 +365,10 @@ public final class BodyCanvas extends BaseComponent {
                     int red = (transitColor >> 16) & 255;
                     int green = (transitColor >> 8) & 255;
                     int blue = transitColor & 255;
-                    buffer.vertex(point.x - radius, point.y - radius, 0).color(red, green, blue, alpha).next();
-                    buffer.vertex(point.x + radius, point.y - radius, 0).color(red, green, blue, alpha).next();
-                    buffer.vertex(point.x + radius, point.y + radius, 0).color(red, green, blue, alpha).next();
-                    buffer.vertex(point.x - radius, point.y + radius, 0).color(red, green, blue, alpha).next();
+                    buffer.vertex(point.x - radius, point.y - radius, 0).color(red, green, blue, alpha).endVertex();
+                    buffer.vertex(point.x + radius, point.y - radius, 0).color(red, green, blue, alpha).endVertex();
+                    buffer.vertex(point.x + radius, point.y + radius, 0).color(red, green, blue, alpha).endVertex();
+                    buffer.vertex(point.x - radius, point.y + radius, 0).color(red, green, blue, alpha).endVertex();
                 }
             }
             for (Marker marker : markers) {
@@ -384,22 +389,22 @@ public final class BodyCanvas extends BaseComponent {
                     float fromSin = (float) Math.sin(from);
                     float toCos = (float) Math.cos(to);
                     float toSin = (float) Math.sin(to);
-                    buffer.vertex(center.x + fromCos * inner, center.y + fromSin * inner, 0).color(red, green, blue, alpha).next();
-                    buffer.vertex(center.x + fromCos * outer, center.y + fromSin * outer, 0).color(red, green, blue, alpha).next();
-                    buffer.vertex(center.x + toCos * outer, center.y + toSin * outer, 0).color(red, green, blue, alpha).next();
-                    buffer.vertex(center.x + toCos * inner, center.y + toSin * inner, 0).color(red, green, blue, alpha).next();
+                    buffer.vertex(center.x + fromCos * inner, center.y + fromSin * inner, 0).color(red, green, blue, alpha).endVertex();
+                    buffer.vertex(center.x + fromCos * outer, center.y + fromSin * outer, 0).color(red, green, blue, alpha).endVertex();
+                    buffer.vertex(center.x + toCos * outer, center.y + toSin * outer, 0).color(red, green, blue, alpha).endVertex();
+                    buffer.vertex(center.x + toCos * inner, center.y + toSin * inner, 0).color(red, green, blue, alpha).endVertex();
                 }
             }
-            BufferRenderer.drawWithGlobalProgram(buffer.end());
+            BufferUploader.drawWithShader(buffer.end());
         } finally {
             // 恢复工作台状态，后续文字与其他窗口不会继承此模型的矩阵和深度。
             RenderSystem.depthMask(true);
             RenderSystem.enableCull();
             RenderSystem.setShaderColor(1, 1, 1, 1);
-            view.pop();
+            view.popPose();
             RenderSystem.applyModelViewMatrix();
             RenderSystem.restoreProjectionMatrix();
-            client.getFramebuffer().beginWrite(true);
+            client.getMainRenderTarget().bindWrite(true);
         }
     }
 

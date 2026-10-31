@@ -25,9 +25,8 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.resources.ResourceLocation;
 import java.io.IOException;
 import java.util.Set;
 import java.util.List;
@@ -36,14 +35,14 @@ import java.util.function.Consumer;
 
 /** 通用窗口入口；宿主提供 Protobuf 身体及生物包的资源标识。 */
 public final class BodyUiModule implements ClientModule {
-    private static final Identifier BODY_VIEW_REQUEST = new Identifier("meridian", "body_view_request");
+    private static final ResourceLocation BODY_VIEW_REQUEST = new ResourceLocation("meridian", "body_view_request");
     private ClientRuntime runtime;
     private WindowKey bodyKey;
     private boolean bodyLocked;
     private WindowKey cultivationKey;
     private boolean cultivationLocked;
-    private static final Identifier HOST_GATHERING_REQUEST = new Identifier("meridian", "gathering_request");
-    private static final Identifier HOST_GATHERING_RESPONSE = new Identifier("meridian", "gathering_response");
+    private static final ResourceLocation HOST_GATHERING_REQUEST = new ResourceLocation("meridian", "gathering_request");
+    private static final ResourceLocation HOST_GATHERING_RESPONSE = new ResourceLocation("meridian", "gathering_response");
     private BodyScene scene;
     private BodySnapshot body;
     private BodyPanel panel;
@@ -94,7 +93,7 @@ public final class BodyUiModule implements ClientModule {
                 && dev.kizuna.meridian.ui.api.MeridianSceneExtension.required().lockedReason().isEmpty());
         ClientProgression.onChanged(this::progressChanged);
         meridians.register(bindings);
-        ClientPlayNetworking.registerGlobalReceiver(new Identifier("meridian", "body_view"),
+        ClientPlayNetworking.registerGlobalReceiver(new ResourceLocation("meridian", "body_view"),
                 (client, handler, buffer, sender) -> {
                     // 先限制长度并复制网络缓冲；只读快照在原连接仍有效时交给客户端线程。
                     if (buffer.readableBytes() == 0 || buffer.readableBytes() > 1024 * 1024) {
@@ -103,14 +102,14 @@ public final class BodyUiModule implements ClientModule {
                     byte[] payload = new byte[buffer.readableBytes()];
                     buffer.readBytes(payload);
                     client.execute(() -> {
-                        if (client.getNetworkHandler() == handler) {
+                        if (client.getConnection() == handler) {
                             receiveBodyView(payload);
                         }
                     });
                 });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
             // 断线可从网络线程通知，旧连接的迟到释放也不能清掉新身体。
-            if (client.getNetworkHandler() == null || client.getNetworkHandler() == handler) {
+            if (client.getConnection() == null || client.getConnection() == handler) {
                 clearBody();
             }
         }));
@@ -122,7 +121,7 @@ public final class BodyUiModule implements ClientModule {
             byte[] payload = new byte[buffer.readableBytes()];
             buffer.readBytes(payload);
             client.execute(() -> {
-                if (client.getNetworkHandler() == handler) {
+                if (client.getConnection() == handler) {
                     try {
                         receiveGathering(GatheringResponse.parseFrom(payload));
                     } catch (IOException invalid) {
@@ -162,7 +161,7 @@ public final class BodyUiModule implements ClientModule {
                 return new LockedNotice("吐纳", UiErrors.GATHERING_LOCKED);
             }
             if (scene == null || body == null) {
-                return Components.label(Text.literal(UiErrors.MISSING_BODY));
+                return Components.label(net.minecraft.network.chat.Component.literal(UiErrors.MISSING_BODY));
             }
             cultivationPanel = new CultivationPanel(scene, this::controlBreathing);
             cultivationKey = openedKey;
@@ -197,7 +196,7 @@ public final class BodyUiModule implements ClientModule {
             return new LockedNotice("内观", UiErrors.INNER_VISION_LOCKED);
         }
         if (scene == null || body == null) {
-            return Components.label(Text.literal(UiErrors.MISSING_BODY));
+            return Components.label(net.minecraft.network.chat.Component.literal(UiErrors.MISSING_BODY));
         }
         panel = new BodyPanel(scene, body);
         BodyPanel opened = panel;
@@ -224,7 +223,7 @@ public final class BodyUiModule implements ClientModule {
             if (update.getProtocolVersion() != 1 || !update.hasBody() || update.getBody().getId().isBlank()) {
                 throw UiErrors.invalid(UiErrors.INVALID_UPDATE);
             }
-            Identifier resource = Identifier.tryParse(update.getPresentationResource());
+            ResourceLocation resource = ResourceLocation.tryParse(update.getPresentationResource());
             if (resource == null) {
                 throw UiErrors.invalid(UiErrors.INVALID_UPDATE);
             }
@@ -252,12 +251,12 @@ public final class BodyUiModule implements ClientModule {
         }
     }
 
-    public void present(BodySnapshot snapshot, Identifier resource) {
+    public void present(BodySnapshot snapshot, ResourceLocation resource) {
         // 只接受客户端线程上的宿主交付；资源按 Minecraft 资源管理器查找，支持内容包覆盖。
-        if (!MinecraftClient.getInstance().isOnThread()) {
+        if (!Minecraft.getInstance().isSameThread()) {
             throw UiErrors.invalid(UiErrors.WRONG_THREAD);
         }
-        try (var stream = MinecraftClient.getInstance().getResourceManager().open(resource)) {
+        try (var stream = Minecraft.getInstance().getResourceManager().open(resource)) {
             BodyScene candidate = new BodyScene(stream.readNBytes(BodyScene.MAX_BYTES + 1));
             candidate.requireTemplate(snapshot);
             if (panel != null || meridians.open() || (body != null && cultivationPanel != null)) {
@@ -279,7 +278,7 @@ public final class BodyUiModule implements ClientModule {
 
     public void update(BodySnapshot snapshot) {
         // 后续快照更新已有窗口；网络认证及快照完整性由宿主接入层负责。
-        if (!MinecraftClient.getInstance().isOnThread() || body == null || scene == null
+        if (!Minecraft.getInstance().isSameThread() || body == null || scene == null
                 || !body.getId().equals(snapshot.getId()) || snapshot.getRevision() < body.getRevision()) {
             throw UiErrors.invalid(UiErrors.INVALID_UPDATE);
         }
@@ -346,7 +345,7 @@ public final class BodyUiModule implements ClientModule {
 
     private static void requireClientThread() {
         // 所有 Addon 与窗口一样在客户端线程交接展示状态。
-        if (!MinecraftClient.getInstance().isOnThread()) {
+        if (!Minecraft.getInstance().isSameThread()) {
             throw UiErrors.invalid(UiErrors.WRONG_THREAD);
         }
     }
@@ -403,7 +402,7 @@ public final class BodyUiModule implements ClientModule {
 
     public void receiveGathering(GatheringResponse response) {
         // 所有响应在客户端线程交付，迟到的旧身体或旧版本不会覆盖当前窗口。
-        if (!MinecraftClient.getInstance().isOnThread()) {
+        if (!Minecraft.getInstance().isSameThread()) {
             throw UiErrors.invalid(UiErrors.WRONG_THREAD);
         }
         if (!ClientProgression.canGather()
@@ -481,7 +480,7 @@ public final class BodyUiModule implements ClientModule {
 
     private void subscribeIntrospection() {
         // 真实服务端单独授权内部视图；未同步不冒充未读发起请求。
-        if (body == null || MinecraftClient.getInstance().getNetworkHandler() == null
+        if (body == null || Minecraft.getInstance().getConnection() == null
                 || !ClientProgression.synchronizedWithServer()) {
             return;
         }

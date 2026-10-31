@@ -4,9 +4,9 @@ import io.wispforest.owo.ui.base.BaseComponent;
 import io.wispforest.owo.ui.core.CursorStyle;
 import io.wispforest.owo.ui.core.OwoUIDrawContext;
 import io.wispforest.owo.ui.core.Sizing;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.Text;
 import java.util.function.BooleanSupplier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
 /** 身体查看器自己的勾选行；不使用原版按钮纹理与控件。 */
@@ -22,7 +22,7 @@ final class LayerToggle extends BaseComponent {
         this.toggle = toggle;
         sizing(Sizing.fill(100), Sizing.fixed(27));
         cursorStyle(CursorStyle.HAND);
-        tooltip(Text.literal(label));
+        tooltip(Component.literal(label));
     }
 
     @Override
@@ -31,12 +31,12 @@ final class LayerToggle extends BaseComponent {
         boolean enabled = checked.getAsBoolean();
         context.fill(x, y, x + width, y + height, hovered ? 0xFF283B42 : 0xFF1B2A31);
         int color = enabled ? 0xFFE3C37B : 0xFF80979F;
-        context.drawBorder(x + 7, y + 8, 10, 10, color);
+        context.renderOutline(x + 7, y + 8, 10, 10, color);
         if (enabled) {
             context.fill(x + 10, y + 11, x + 14, y + 15, color);
         }
-        var font = MinecraftClient.getInstance().textRenderer;
-        context.drawText(font, font.trimToWidth(label, Math.max(0, width - 26)), x + 24, y + 9, color, false);
+        var font = Minecraft.getInstance().font;
+        context.drawString(font, font.plainSubstrByWidth(label, Math.max(0, width - 26)), x + 24, y + 9, color, false);
     }
 
     @Override

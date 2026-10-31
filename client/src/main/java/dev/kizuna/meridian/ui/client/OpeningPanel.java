@@ -5,14 +5,13 @@ import io.wispforest.owo.ui.component.LabelComponent;
 import io.wispforest.owo.ui.container.FlowLayout;
 import io.wispforest.owo.ui.core.Component;
 import io.wispforest.owo.ui.parsing.UIModelLoader;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
 import java.util.Map;
 import java.util.List;
 import java.util.ArrayList;
 import dev.kizuna.meridian.protocol.pb.OperationUiMessages.*;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
+import net.minecraft.resources.ResourceLocation;
 import org.lwjgl.glfw.GLFW;
 
 /** 附属共用紧凑条形浮窗，选择和执行分开，操作栏始终留在底部。 */
@@ -35,7 +34,7 @@ final class OpeningPanel {
                  Supplier<String> choiceCaption, BooleanSupplier hasChoices, Runnable choose, Runnable focus) {
         // XML 管理布局槽，所有附属共享相同卡片结构和输入方式。
         this.hasChoices = hasChoices;
-        content = UIModelLoader.get(new Identifier("meridian_ui", "opening"))
+        content = UIModelLoader.get(new ResourceLocation("meridian_ui", "opening"))
                 .expandTemplate(FlowLayout.class, "opening-detail", Map.of());
         statusSlot = content.childById(FlowLayout.class, "status");
         statusText = statusSlot.childById(LabelComponent.class, "status-text");
@@ -101,7 +100,7 @@ final class OpeningPanel {
         this.view = view;
         arrange(root.width(), root.height());
         String heading = title.isBlank() ? "经脉" : title;
-        content.childById(LabelComponent.class, "selection-title").text(Text.literal(heading));
+        content.childById(LabelComponent.class, "selection-title").text(net.minecraft.network.chat.Component.literal(heading));
         updateText(statusSlot, statusText, view.getStatus(), "");
         String hint = error.isEmpty() ? view.getHint() : error;
         updateText(feedbackSlot, feedbackText, error.isEmpty() ? "" : "操作未完成", hint);
@@ -118,7 +117,7 @@ final class OpeningPanel {
 
     private void updateText(FlowLayout slot, LabelComponent label, String text, String hint) {
         // 悬浮说明属于稳定槽位；没有文案时移除文字控件，避免鼠标经过或点击时查询空行。
-        slot.tooltip(hint.isBlank() ? List.of() : List.of(Text.literal(hint)));
+        slot.tooltip(hint.isBlank() ? List.of() : List.of(net.minecraft.network.chat.Component.literal(hint)));
         boolean shown = slot.children().contains(label);
         if (text.isBlank()) {
             if (shown) {
@@ -129,7 +128,7 @@ final class OpeningPanel {
 
         // 重用原标签，只有文案变化或重新显示时才触发布局，避免每次快照都重建控件。
         if (!label.text().getString().equals(text)) {
-            label.text(Text.literal(text));
+            label.text(net.minecraft.network.chat.Component.literal(text));
         }
         if (!shown) {
             slot.child(label);

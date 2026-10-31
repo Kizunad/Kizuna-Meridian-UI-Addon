@@ -3,8 +3,8 @@ package dev.kizuna.meridian.ui.client;
 import io.wispforest.owo.ui.base.BaseComponent;
 import io.wispforest.owo.ui.core.OwoUIDrawContext;
 import io.wispforest.owo.ui.core.Sizing;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 
 /** 未解锁窗口的统一提示卡；只展示客户端投影给出的原因，实际权限仍由服务端裁定。 */
 final class LockedNotice extends BaseComponent {
@@ -30,21 +30,21 @@ final class LockedNotice extends BaseComponent {
     @Override
     public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
         // 锁形图标、标题、找卷说明自上而下居中，窗口缩放后仍完整可读。
-        var font = MinecraftClient.getInstance().textRenderer;
+        var font = Minecraft.getInstance().font;
         context.fill(x, y, x + width, y + height, BACKGROUND);
         int centerX = x + width / 2;
         int top = y + Math.max(8, height / 2 - 64);
         lock(context, centerX, top);
 
         String heading = title + "　未解锁";
-        float headingLeft = centerX - font.getWidth(heading) * HEADING_SCALE / 2;
-        context.drawText(Text.literal(heading), headingLeft, top + 42, HEADING_SCALE, HEADING);
+        float headingLeft = centerX - font.width(heading) * HEADING_SCALE / 2;
+        context.drawText(Component.literal(heading), headingLeft, top + 42, HEADING_SCALE, HEADING);
 
         // 原因按窗口宽度折行，窄窗口也不会截掉要找的残卷名称。
-        var lines = font.wrapLines(Text.literal(reason), Math.max(40, width - 48));
+        var lines = font.split(Component.literal(reason), Math.max(40, width - 48));
         for (int line = 0; line < lines.size(); line++) {
             var wrapped = lines.get(line);
-            context.drawText(font, wrapped, centerX - font.getWidth(wrapped) / 2, top + 66 + line * LINE_HEIGHT,
+            context.drawString(font, wrapped, centerX - font.width(wrapped) / 2, top + 66 + line * LINE_HEIGHT,
                     BODY_TEXT, false);
         }
     }

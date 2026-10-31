@@ -1,13 +1,13 @@
 package dev.kizuna.meridian.ui.client;
 
+import com.mojang.blaze3d.vertex.BufferBuilder;
 import dev.kizuna.playeranimation.animation.AnimationPlayer;
 import dev.kizuna.playeranimation.client.PlayerAnimationClient;
 import dev.kizuna.playeranimation.client.PlayerAssets;
 import dev.kizuna.playeranimation.model.BoneId;
 import dev.kizuna.playeranimation.model.Rig;
 import dev.kizuna.playeranimation.model.SkinnedMesh;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.Minecraft;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -38,8 +38,8 @@ final class MeditationAvatar {
 
     static MeditationAvatar create(String animation) {
         // 吐纳要求真实骨架和指定动作，缺资源时直接暴露装配错误。
-        var viewer = MinecraftClient.getInstance().player;
-        boolean slim = viewer != null && "slim".equals(viewer.getModel());
+        var viewer = Minecraft.getInstance().player;
+        boolean slim = viewer != null && "slim".equals(viewer.getModelName());
         PlayerAssets.Model model = PlayerAnimationClient.ASSETS.model(slim);
         if (model == null || !PlayerAnimationClient.ASSETS.animations().containsKey(animation)) {
             throw UiErrors.invalid(UiErrors.MISSING_MEDITATION_ASSETS + animation);
@@ -93,7 +93,7 @@ final class MeditationAvatar {
         for (int index = 0; index < vertices.length; index++) {
             matrix.transformPosition(positions[index * 3], positions[index * 3 + 1], positions[index * 3 + 2], point);
             int shade = shades[index];
-            buffer.vertex(point.x, point.y, point.z).color(shade, shade + 4, shade + 8, 185).next();
+            buffer.vertex(point.x, point.y, point.z).color(shade, shade + 4, shade + 8, 185).endVertex();
         }
     }
 }

@@ -14,9 +14,9 @@ import dev.kizuna.meridian.protocol.pb.OperationUiMessages.*;
 import io.wispforest.owo.ui.component.Components;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,8 +25,8 @@ import java.util.function.Consumer;
 
 /** 经脉窗口与操作意图编排；只读快照、网络回执和镜头各自独立。 */
 final class MeridianWindows {
-    private static final Identifier REQUEST = new Identifier("meridian", "opening_request");
-    private static final Identifier RESPONSE = new Identifier("meridian", "opening_response");
+    private static final ResourceLocation REQUEST = new ResourceLocation("meridian", "opening_request");
+    private static final ResourceLocation RESPONSE = new ResourceLocation("meridian", "opening_response");
     private BodyScene scene;
     private BodySnapshot body;
     private List<MeridianOpeningRule> rules = List.of();
@@ -106,7 +106,7 @@ final class MeridianWindows {
                 return new LockedNotice(extension.title(), extension.lockedReason());
             }
             if (scene == null || body == null) {
-                return Components.label(Text.literal(UiErrors.MISSING_BODY));
+                return Components.label(Component.literal(UiErrors.MISSING_BODY));
             }
             practice = new MeridianPanel(scene, body, selected -> {}, () -> {}, true);
             practiceKey = openedKey;
@@ -132,7 +132,7 @@ final class MeridianWindows {
             buffer.readBytes(payload);
             client.execute(() -> {
                 // 旧连接迟到回执不能改变新连接的请求状态。
-                if (client.getNetworkHandler() != handler) {
+                if (client.getConnection() != handler) {
                     return;
                 }
                 try {
@@ -153,7 +153,7 @@ final class MeridianWindows {
             ClientProgression.requireCultivation();
             runtime = owner;
             if (scene == null || body == null) {
-                return Components.label(Text.literal(UiErrors.MISSING_BODY));
+                return Components.label(Component.literal(UiErrors.MISSING_BODY));
             }
             panel = new MeridianPanel(scene, body, this::select, this::operate);
             panelKey = window.key();
@@ -315,7 +315,7 @@ final class MeridianWindows {
 
     void receive(ResponseEnvelope response) {
         // 回执只确认当前请求；成功后等待身体快照显示进度，不能本地标记已拓宽。
-        if (!MinecraftClient.getInstance().isOnThread()) {
+        if (!Minecraft.getInstance().isSameThread()) {
             throw UiErrors.invalid(UiErrors.WRONG_THREAD);
         }
         if (response.getProtocolVersion() != 1 || pending.isEmpty() || !response.getRequestId().equals(pending)) {

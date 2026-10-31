@@ -1,27 +1,31 @@
 package dev.kizuna.meridian.ui.client;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexBuffer;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
-import net.minecraft.client.gl.VertexBuffer;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.*;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
 /** 窗口持有的静态网格；顶点只上传一次，相机和高亮通过着色器更新。 */
 final class BodyMesh implements AutoCloseable {
     private final VertexBuffer vertices = new VertexBuffer(VertexBuffer.Usage.STATIC);
-    private final Identifier texture;
+    private final ResourceLocation texture;
     private final boolean playerSkin;
 
     BodyMesh(BodyVisual visual, boolean useTexture) {
         // 几何和法线来自已校验内容；静态模型不在每帧创建矩阵转换临时对象。
-        texture = useTexture && !visual.getTextureResource().isEmpty() ? new Identifier(visual.getTextureResource()) : null;
+        texture = useTexture && !visual.getTextureResource().isEmpty() ? new ResourceLocation(visual.getTextureResource()) : null;
         playerSkin = useTexture && visual.hasPlayerSkin();
-        BufferBuilder buffer = Tessellator.getInstance().getBuffer();
-        VertexFormat format = texture == null ? VertexFormats.POSITION_COLOR : VertexFormats.POSITION_TEXTURE_COLOR;
-        buffer.begin(VertexFormat.DrawMode.TRIANGLES, format);
+        BufferBuilder buffer = Tesselator.getInstance().getBuilder();
+        VertexFormat format = texture == null ? DefaultVertexFormat.POSITION_COLOR : DefaultVertexFormat.POSITION_TEX_COLOR;
+        buffer.begin(VertexFormat.Mode.TRIANGLES, format);
         Vector3f normal = new Vector3f();
         for (int index = 0; index < visual.getTrianglesCount(); index += 3) {
             ModelPoint a = visual.getVertices(visual.getTriangles(index));
@@ -41,11 +45,11 @@ final class BodyMesh implements AutoCloseable {
                 buffer.vertex(point.getX(), point.getY(), point.getZ());
                 if (texture != null) {
                     ModelUv uv = visual.getTextureUv(vertexIndex);
-                    buffer.texture(uv.getU(), uv.getV());
+                    buffer.uv(uv.getU(), uv.getV());
                 }
                 // 玩家皮肤已经包含完整颜色；不再把模型法线的灰度光照乘到皮肤贴图上。
                 // 解剖贴图仍使用几何明暗，让不同表面保持立体层次。
-                buffer.color(vertexColor, vertexColor, vertexColor, 255).next();
+                buffer.color(vertexColor, vertexColor, vertexColor, 255).endVertex();
             }
         }
         vertices.bind();
@@ -56,14 +60,14 @@ final class BodyMesh implements AutoCloseable {
     void draw(Matrix4f matrix, int color, float brightness, int alpha) {
         // 颜色和透明度属于本次绘制，改变选择或肺部大小无需重新上传顶点。
         if (texture == null) {
-            RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+            RenderSystem.setShader(GameRenderer::getPositionColorShader);
         } else {
-            RenderSystem.setShader(GameRenderer::getPositionTexColorProgram);
+            RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
             // 皮肤身份始终来自游戏当前玩家，不读取内容包上传的 URL 或另建网络下载器。
-            MinecraftClient client = MinecraftClient.getInstance();
-            Identifier currentTexture = texture;
+            Minecraft client = Minecraft.getInstance();
+            ResourceLocation currentTexture = texture;
             if (playerSkin && client.player != null) {
-                currentTexture = client.player.getSkinTexture();
+                currentTexture = client.player.getSkinTextureLocation();
             }
             RenderSystem.setShaderTexture(0, currentTexture);
         }
@@ -72,7 +76,7 @@ final class BodyMesh implements AutoCloseable {
         vertices.bind();
         // GUI 的全局视图含深度平移，静态缓冲需像普通顶点管线一样叠加它，避免落到裁剪面外。
         Matrix4f modelView = new Matrix4f(RenderSystem.getModelViewMatrix()).mul(matrix);
-        vertices.draw(modelView, RenderSystem.getProjectionMatrix(), RenderSystem.getShader());
+        vertices.drawWithShader(modelView, RenderSystem.getProjectionMatrix(), RenderSystem.getShader());
         VertexBuffer.unbind();
         RenderSystem.setShaderColor(1, 1, 1, 1);
     }

@@ -22,7 +22,7 @@
 
 `BodyUiModule` 通过 `kizuna_inventory_ui` 入口注册通用“检视”“吐纳”和“经脉”窗口，宿主应取得 Fabric 已加载的同一个模块实例。检视窗口暂时只作只读预览，聚气入口见[独立修炼窗口](Gathering.md)，选脉与操作见[经脉窗口](Meridian-Opening.md)。入口 ID `meridian_ui:body` 保持不变。
 
-1. 在客户端线程调用 `present(BodySnapshot, Identifier)`，传入已认证和校验的身体快照及内容资源 ID。
+1. 在客户端线程调用 `present(BodySnapshot, ResourceLocation)`，传入已认证和校验的身体快照及内容资源 ID。
 2. 经 Inventory UI 打开 `meridian_ui:body` 功能入口。
 3. 新快照通过 `update(BodySnapshot)` 更新显示。身体 ID 和精确模板版本保持一致，拒绝 revision 倒退。
 4. 切换身体或模型前关闭身体、吐纳与经脉及其浮窗，再调用 `present`。断线时模块清除快照与资源引用。

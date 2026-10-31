@@ -5,9 +5,10 @@ import dev.kizuna.inventoryui.client.component.ResponsiveLayout;
 import dev.kizuna.meridian.protocol.pb.GatheringMessages.GatheringView;
 import io.wispforest.owo.ui.container.FlowLayout;
 import io.wispforest.owo.ui.parsing.UIModelLoader;
-import net.minecraft.util.Identifier;
 import java.util.Map;
 import java.util.function.Consumer;
+import net.minecraft.resources.ResourceLocation;
+
 import static dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathAction.*;
 
 /** 可重复进入的手动吐纳窗口；身体预览继续保持只读。 */
@@ -26,14 +27,14 @@ public final class CultivationPanel {
     public CultivationPanel(BodyScene scene, Consumer<BreathControl> sender) {
         // XML 提供整幅场景；各控件随后叠加在同一场景内部。
         this.sender = sender;
-        FlowLayout content = UIModelLoader.get(new Identifier("meridian_ui", "cultivation"))
+        FlowLayout content = UIModelLoader.get(new ResourceLocation("meridian_ui", "cultivation"))
                 .expandTemplate(FlowLayout.class, "cultivation-panel", Map.of());
         canvas = new BreathingCanvas(scene, sender);
         content.child(canvas);
         ActionRow action = new ActionRow(this::actionLabel, this::canAct, this::act);
         action.id("breathing-start");
         meters = new BreathingMeters(content, action);
-        automatic = io.wispforest.owo.ui.component.Components.checkbox(net.minecraft.text.Text.literal("自动吐纳"));
+        automatic = io.wispforest.owo.ui.component.Components.checkbox(net.minecraft.network.chat.Component.literal("自动吐纳"));
         automatic.id("breathing-automatic");
         automatic.positioning(io.wispforest.owo.ui.core.Positioning.relative(50, 100));
         automatic.margins(io.wispforest.owo.ui.core.Insets.bottom(72));
@@ -86,15 +87,15 @@ public final class CultivationPanel {
         @Override
         public void draw(io.wispforest.owo.ui.core.OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
             // 只在勾选自动或服务端正在自动时显示，未勾选不占用场景。
-            if (view == null || !view.hasBreathing() || !automatic.isChecked()) {
+            if (view == null || !view.hasBreathing() || !automatic.selected()) {
                 return;
             }
-            var font = net.minecraft.client.MinecraftClient.getInstance().textRenderer;
+            var font = net.minecraft.client.Minecraft.getInstance().font;
             context.fill(x, y, x + width, y + height, 0xC8061016);
-            var lines = font.wrapLines(net.minecraft.text.Text.literal(automaticDescription()), Math.max(1, width - 12));
+            var lines = font.split(net.minecraft.network.chat.Component.literal(automaticDescription()), Math.max(1, width - 12));
             for (int line = 0; line < Math.min(2, lines.size()); line++) {
                 var wrapped = lines.get(line);
-                context.drawText(font, wrapped, x + (width - font.getWidth(wrapped)) / 2, y + 4 + line * 11, 0xFF9BF2B8, false);
+                context.drawString(font, wrapped, x + (width - font.width(wrapped)) / 2, y + 4 + line * 11, 0xFF9BF2B8, false);
             }
         }
     }
@@ -122,7 +123,7 @@ public final class CultivationPanel {
             }
             // 悬浮提示与常显说明使用同一份权威停止线和效率。
             if (view.hasBreathing()) {
-                automatic.tooltip(net.minecraft.text.Text.literal(automaticDescription()));
+                automatic.tooltip(net.minecraft.network.chat.Component.literal(automaticDescription()));
             }
             canvas.update(view);
         }
@@ -162,7 +163,7 @@ public final class CultivationPanel {
             canvas.tutorial(false);
         }
         sender.accept(BreathControl.newBuilder().setAction(BEGIN_BREATHING)
-                .setAutomatic(automatic.isChecked())
+                .setAutomatic(automatic.selected())
                 .setAimX(.5).setAimY(.4).setAimZ(.5).build());
     }
 
