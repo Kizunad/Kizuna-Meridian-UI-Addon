@@ -63,7 +63,7 @@ Human Addon 由宿主装配人体内容，客户端通过必需的 Human-UI 与 
 
 窗口自适应还需要 Inventory UI 当前源码中的七参数 `UiWindowDefinition` 和 `ResponsiveLayout`。先重建框架 JAR 再构建本附属，运行时同步更新两个客户端产物；只更换 UI Addon 而保留旧窗口框架不满足此 API 依赖。这是本地构建要求，尚无对应的已发布版本号。
 
-客户端已配置 Fabric Loom、Minecraft 1.20.1、Yarn 1.20.1+build.10、Fabric Loader 0.16.10、Fabric API 0.92.3+1.20.1 与 owo-lib 0.11.2+1.20。静态布局使用 XML，公共相机与窗口 API 来自 Inventory UI。服务端提供纯 Java 聚气路由桥接，未内置 Minecraft 玩家或世界服务。
+客户端已配置 Fabric Loom、Minecraft 1.20.1、Mojang 官方映射、Fabric Loader 0.16.10、Fabric API 0.92.3+1.20.1 与 owo-lib 0.11.2+1.20。静态布局使用 XML，公共相机与窗口 API 来自 Inventory UI。服务端提供纯 Java 聚气路由桥接，未内置 Minecraft 玩家或世界服务。
 
 ## 构建产物与验证范围
 
