@@ -74,7 +74,9 @@ Human Addon 由宿主装配人体内容，客户端通过必需的 Human-UI 与 
 
 2026-11-01 迁移到 Minecraft 26.2：本仓 `test build` 通过，JUnit 10 项（`BodyPresentationTest` 8、`OpeningFeedbackTest` 2）零失败、错误、跳过，与迁移前相同；`clientTest` 源集编译通过；`check_docs.py` 通过。身体与吐纳画布由离屏帧缓冲加即时绘制改为画中画渲染器提交。完整装配就绪后已在 26.2 实际运行：`:client:runInnerVisionTest` 结果为 `success=true`，Human-UI 整合服 smoke 的默认、复活与开拓效果三种模式均通过，身体、经脉与吐纳画面已实看。经脉与吐纳画布的半透明部分观感与 1.20.1 不同：1.20.1 的离屏帧缓冲只保留最后一个片元的 alpha，合成时透出窗口面板，表层轮廓近乎隐形、地面与光点圆晕呈灰色；26.2 的画中画按预乘 alpha 合成，显示的是代码绘制的颜色本身（深色表层剪影、由内向外的青色地面渐变、淡圆晕），以此为准，不复现旧观感。本页其余 1.20.1 时期的结果不代表 26.2 已验证。
 
-`BodyPresentationTest` 验证非人体映射、快照状态与坏资源拒绝；游戏内交互及[手动吐纳](Gathering.md)由 Human-UI 的整合服 smoke 在真实玩家身体上验收（见下节）。生产身体查询入口、玩家实体绑定与资源协商仍由宿主接入。吐纳方向、## 游戏内验收
+`BodyPresentationTest` 验证非人体映射、快照状态与坏资源拒绝；游戏内交互及[手动吐纳](Gathering.md)由 Human-UI 的整合服 smoke 在真实玩家身体上验收（见下节）。生产身体查询入口、玩家实体绑定与资源协商仍由宿主接入。吐纳方向、瞄准、空气与消耗使用框架独立 Protobuf 消息。
+
+## 游戏内验收
 
 真实玩家由 Human 的 `fabric/` 宿主推送 `presentation.proto` 的 `BodyViewUpdate`。客户端在 `meridian:body_view` 接收有界 Protobuf，断线清理、拒绝跨连接迟到消息与倒退版本；此入口仅作展示。Human 适配目前提供行走/疾跑身体与疲劳数值，`I` → 检视 → 勾选肌肉可查看实际占用和恢复半衰期；默认只显示使用玩家基础皮肤的体表。精确当前可用力量/耐力使用宿主 `/meridian tissue <id>` 查询。UI 本身没有 Human 编译依赖。
 
