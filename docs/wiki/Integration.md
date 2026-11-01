@@ -72,7 +72,7 @@ Human Addon 由宿主装配人体内容，客户端通过必需的 Human-UI 与 
 
 客户端 JAR 包含 Fabric 窗口入口、通用查看器及 XML；没有人体模型、演示、测试或另一份核心。宿主仍需提供经脉 Java 库与依赖，并向窗口交付已授权的身体快照。经脉框架的 Fabric 模组 `meridian_framework` 是声明的必需依赖，只把 UI JAR 放进 `mods` 不构成完整部署。
 
-2026-11-01 迁移到 Minecraft 26.2：本仓 `test build` 通过，JUnit 10 项（`BodyPresentationTest` 8、`OpeningFeedbackTest` 2）零失败、错误、跳过，与迁移前相同；`clientTest` 源集编译通过；`check_docs.py` 通过。身体与吐纳画布由离屏帧缓冲加即时绘制改为画中画渲染器提交。`:client:runInnerVisionTest` 和 Human-UI 整合服 smoke 都依赖完整装配，而 Human、Human-UI 等尚未迁到 26.2，本次没有运行；身体、经脉与吐纳画面的实际效果也尚未实看。本页其余 1.20.1 时期的结果不代表 26.2 已验证。
+2026-11-01 迁移到 Minecraft 26.2：本仓 `test build` 通过，JUnit 10 项（`BodyPresentationTest` 8、`OpeningFeedbackTest` 2）零失败、错误、跳过，与迁移前相同；`clientTest` 源集编译通过；`check_docs.py` 通过。身体与吐纳画布由离屏帧缓冲加即时绘制改为画中画渲染器提交。完整装配就绪后已在 26.2 实际运行：`:client:runInnerVisionTest` 结果为 `success=true`，Human-UI 整合服 smoke 的默认、复活与开拓效果三种模式均通过，身体、经脉与吐纳画面已实看。经脉与吐纳画布的半透明部分观感与 1.20.1 不同：1.20.1 的离屏帧缓冲只保留最后一个片元的 alpha，合成时透出窗口面板，表层轮廓近乎隐形、地面与光点圆晕呈灰色；26.2 的画中画按预乘 alpha 合成，显示的是代码绘制的颜色本身（深色表层剪影、由内向外的青色地面渐变、淡圆晕），以此为准，不复现旧观感。本页其余 1.20.1 时期的结果不代表 26.2 已验证。
 
 `BodyPresentationTest` 验证非人体映射、快照状态与坏资源拒绝；游戏内交互及[手动吐纳](Gathering.md)由 Human-UI 的整合服 smoke 在真实玩家身体上验收（见下节）。生产身体查询入口、玩家实体绑定与资源协商仍由宿主接入。吐纳方向、## 游戏内验收
 
