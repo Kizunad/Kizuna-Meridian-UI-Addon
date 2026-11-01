@@ -3,6 +3,7 @@ package dev.kizuna.meridian.ui.client;
 import dev.kizuna.inventoryui.client.component.ResponsiveLayout;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
+import io.wispforest.owo.ui.component.LabelComponent;
 import io.wispforest.owo.ui.container.FlowLayout;
 import io.wispforest.owo.ui.core.UIComponent;
 import io.wispforest.owo.ui.core.Positioning;
@@ -76,7 +77,14 @@ public final class MeridianPanel {
     static void place(UIComponent component, int x, int y, int width, int height) {
         // 内容区缩小时仍保留正尺寸，文字溢出由各自滚动区处理。
         component.positioning(Positioning.absolute(Math.max(0, x), Math.max(0, y)));
-        component.sizing(Sizing.fixed(Math.max(1, width)), Sizing.fixed(Math.max(1, height)));
+        if (component instanceof LabelComponent label) {
+            // owo 0.13 每次排布只 inflate 子组件一次，固定宽度的标签会按 inflate 前的旧宽度（首次为 0）折行成逐字竖排；
+            // 改为内容宽度并以 maxWidth 限定折行宽度，首次排布即按给定宽度折行。
+            label.maxWidth(Math.max(1, width));
+            label.sizing(Sizing.content(), Sizing.fixed(Math.max(1, height)));
+        } else {
+            component.sizing(Sizing.fixed(Math.max(1, width)), Sizing.fixed(Math.max(1, height)));
+        }
     }
 
     public void update(BodySnapshot body) {

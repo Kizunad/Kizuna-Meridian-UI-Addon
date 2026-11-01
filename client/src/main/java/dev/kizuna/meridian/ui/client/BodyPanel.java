@@ -10,7 +10,6 @@ import io.wispforest.owo.ui.component.LabelComponent;
 import io.wispforest.owo.ui.container.FlowLayout;
 import io.wispforest.owo.ui.parsing.UIModelLoader;
 import io.wispforest.owo.ui.core.UIComponent;
-import io.wispforest.owo.ui.core.Positioning;
 import io.wispforest.owo.ui.core.Sizing;
 import java.util.List;
 import java.util.Map;
@@ -67,8 +66,8 @@ public final class BodyPanel {
         int innerWidth = Math.max(1, width - PADDING * 2);
         int top = PADDING + TITLE_HEIGHT;
         int bottom = Math.max(top + 1, height - PADDING - HINT_HEIGHT - GAP);
-        place(content.childById(UIComponent.class, "body-title"), PADDING, PADDING, innerWidth, TITLE_HEIGHT);
-        place(content.childById(UIComponent.class, "body-hint"), PADDING,
+        MeridianPanel.place(content.childById(UIComponent.class, "body-title"), PADDING, PADDING, innerWidth, TITLE_HEIGHT);
+        MeridianPanel.place(content.childById(UIComponent.class, "body-hint"), PADDING,
                 Math.max(PADDING, height - PADDING - HINT_HEIGHT), innerWidth, HINT_HEIGHT);
 
         FlowLayout layers = content.childById(FlowLayout.class, "layers");
@@ -81,11 +80,11 @@ public final class BodyPanel {
             int columns = Math.max(1, (innerWidth + TOGGLE_GAP) / (toggleWidth + TOGGLE_GAP));
             int rows = (layers.children().size() + columns - 1) / columns;
             int controlsHeight = Math.min(rows * (TOGGLE_HEIGHT + TOGGLE_GAP), Math.max(TOGGLE_HEIGHT, (bottom - top) / 3));
-            place(content.childById(UIComponent.class, "layers-scroll"), PADDING, top, innerWidth, controlsHeight);
+            MeridianPanel.place(content.childById(UIComponent.class, "layers-scroll"), PADDING, top, innerWidth, controlsHeight);
             top += controlsHeight + GAP;
         } else {
             // 宽窗口沿用左侧勾选栏；模型和详情只平分扣除侧栏后的空间。
-            place(content.childById(UIComponent.class, "layers-scroll"), PADDING, top, SIDEBAR_WIDTH, bottom - top);
+            MeridianPanel.place(content.childById(UIComponent.class, "layers-scroll"), PADDING, top, SIDEBAR_WIDTH, bottom - top);
             modelLeft += SIDEBAR_WIDTH + GAP;
             remainingWidth -= SIDEBAR_WIDTH + GAP;
         }
@@ -96,15 +95,9 @@ public final class BodyPanel {
         int detailWidth = Math.max(1, (remainingWidth - GAP) * 45 / 100);
         int modelWidth = Math.max(1, remainingWidth - GAP - detailWidth);
         int areaHeight = Math.max(1, bottom - top);
-        place(content.childById(UIComponent.class, "canvas"), modelLeft, top, modelWidth, areaHeight);
-        place(content.childById(UIComponent.class, "information-scroll"), modelLeft + modelWidth + GAP,
+        MeridianPanel.place(content.childById(UIComponent.class, "canvas"), modelLeft, top, modelWidth, areaHeight);
+        MeridianPanel.place(content.childById(UIComponent.class, "information-scroll"), modelLeft + modelWidth + GAP,
                 top, detailWidth, areaHeight);
-    }
-
-    private static void place(UIComponent component, int x, int y, int width, int height) {
-        // 位置和大小共同交给 owo，使绘制、裁剪和鼠标命中始终使用同一套逻辑坐标。
-        component.positioning(Positioning.absolute(x, y));
-        component.sizing(Sizing.fixed(Math.max(1, width)), Sizing.fixed(Math.max(1, height)));
     }
 
     public FlowLayout root() {
