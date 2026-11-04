@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<owo-ui>
+    <templates>
+        <combat-book>
+            <flow-layout direction="vertical">
+                <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+                <children>
+                    <label id="library-title"><text>已学功法</text><shadow>false</shadow></label>
+                    <label id="detail-title"><text>功法详情</text><shadow>false</shadow></label>
+                    <scroll id="library-scroll" direction="vertical">
+                        <flow-layout id="library" direction="vertical">
+                            <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
+                            <padding><right>5</right></padding>
+                        </flow-layout>
+                        <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+                    </scroll>
+                    <scroll id="detail-scroll" direction="vertical">
+                        <flow-layout id="detail" direction="vertical">
+                            <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
+                            <padding><right>5</right></padding>
+                        </flow-layout>
+                        <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+                    </scroll>
+                    <flow-layout id="slots" direction="horizontal"/>
+                </children>
+            </flow-layout>
+        </combat-book>
+    </templates>
+</owo-ui>

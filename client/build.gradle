@@ -20,6 +20,8 @@ dependencies {
     // 身体界面的 meridian:* 通道只在 Framework 的 Fabric 模组 MeridianChannels 定义一份，界面直接取用。
     compileOnly 'dev.kizuna.meridian:fabric'
     compileOnly 'dev.kizuna.meridian.progression:client'
+    compileOnly 'dev.kizuna.meridian.combat:fabric'
+    implementation 'dev.kizuna.meridian.combat:core'
     implementation 'dev.kizuna.meridian.progression:shared'
     testImplementation libs.junit4
     // 单元测试直接使用 Inventory UI 类型，测试类路径单独补上同一份 JAR。
@@ -79,6 +81,51 @@ tasks.named("runInnerVisionTest") {
     doLast {
         if (!report.get().asFile.text.startsWith("success=true")) {
             throw new GradleException("内观客户端验收失败：${report.get().asFile}")
+        }
+    }
+}
+
+// 功法配置验收使用真实完整装配、独立存档和测试输入，不进入发行 JAR。
+sourceSets {
+    combatTest {
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+    }
+}
+dependencies {
+    combatTestImplementation 'dev.kizuna.meridian.technique:fabric'
+    combatTestImplementation 'dev.kizuna.meridian.technique:server'
+}
+loom {
+    mods {
+        meridian_ui_combat_test { sourceSet sourceSets.combatTest }
+    }
+    runs {
+        combatSlotTest {
+            client()
+            source sourceSets.combatTest
+            runDir 'build/combat-slot-test'
+            programArgs '--quickPlaySingleplayer', 'combat-slot-test', '--width', '1280', '--height', '960'
+        }
+    }
+}
+tasks.register('prepareCombatSlotWorld', Copy) {
+    from new File(kizunaWorkspace.directory('progression'), 'fabric/build/gametest/world')
+    into layout.buildDirectory.dir('combat-slot-test/saves/combat-slot-test')
+    exclude 'session.lock'
+}
+tasks.named('runCombatSlotTest') {
+    dependsOn tasks.named('prepareCombatSlotWorld')
+    def report = layout.buildDirectory.file('combat-slot-results.txt')
+    doFirst {
+        report.get().asFile.text = 'success=false\n'
+        def options = layout.buildDirectory.file('combat-slot-test/options.txt').get().asFile
+        options.parentFile.mkdirs()
+        options.text = 'onboardAccessibility:false\nlang:zh_cn\nguiScale:2\n'
+    }
+    doLast {
+        if (!report.get().asFile.text.startsWith('success=true')) {
+            throw new GradleException("功法配置客户端验收失败：${report.get().asFile}")
         }
     }
 }
