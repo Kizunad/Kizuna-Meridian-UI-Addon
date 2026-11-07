@@ -10,6 +10,8 @@
 - 右页展示选中功法名称、独立简介、投影冷却和当前不可用原因；没有简介时显示「暂无功法简介」。
 - 底部十槽固定显示 `1 2 3 4 5 6 7 8 9 0`。两页分别滚动，最小外框为 320×240 GUI 单位。
 - 十槽下方不显示操作说明或状态文字，成功配置直接反映在槽位中。
+- 十槽下方“姿态设置”调用公开 `MeridianSettings.open(pageId)`，与 Meridian / 设置入口共享
+  `meridian_combat:stance` 页及草稿，见[集中设置接入](Central-Settings.md)。
 - 图标路径复用 `CombatHud.texture`，书本背景采用 CPA 生成资源，见[背景资源](Combat-Book-Assets.md)。
 
 唯一数据来源为 Combat 客户端 `CombatSlotAccess` 的不可变快照。只有投影变化才刷新模型；

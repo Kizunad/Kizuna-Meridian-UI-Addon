@@ -67,6 +67,16 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
         detail = content.childById(FlowLayout.class, "detail");
         slots = content.childById(FlowLayout.class, "slots");
         slots.gap(GAP);
+        var settings = dev.kizuna.meridian.ui.client.settings.SettingsWidgets.button(runtime, "姿态设置", () -> {
+            // 通过公开接口定位同一设置窗口，不为功法页另建配置副本。
+            var result = dev.kizuna.meridian.ui.api.settings.MeridianSettings.open(
+                    dev.kizuna.meridian.ui.client.settings.combat.CombatSettingsProvider.ID);
+            if (result.status() == dev.kizuna.meridian.ui.api.settings.MeridianSettings.Status.UNAVAILABLE) {
+                Minecraft.getInstance().player.sendSystemMessage(Component.literal(result.message()));
+            }
+        });
+        settings.id("stance-settings");
+        content.child(settings);
         detail.gap(GAP * 2);
         library.gap(GAP * 2);
         child(content);
@@ -137,6 +147,7 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
         place("detail-scroll", rightX, TITLE_HEIGHT + MARGIN, pageWidth, pageHeight);
         int footerY = height - FOOTER_HEIGHT + GAP;
         place("slots", MARGIN, footerY, width - MARGIN * 2, SLOT_HEIGHT);
+        place("stance-settings", MARGIN, footerY + SLOT_HEIGHT + GAP, width - MARGIN * 2, TITLE_HEIGHT);
         int slotWidth = Math.max(1, (width - MARGIN * 2 - GAP * (CombatIds.SLOT_COUNT - 1))
                 / CombatIds.SLOT_COUNT);
         slotTiles.forEach(tile -> tile.horizontalSizing(Sizing.fixed(slotWidth)));

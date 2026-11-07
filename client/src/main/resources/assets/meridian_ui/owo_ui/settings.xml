@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<owo-ui>
+    <templates>
+        <settings-host>
+            <flow-layout direction="horizontal">
+                <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+                <padding><all>6</all></padding>
+                <gap>6</gap>
+                <children>
+                    <flow-layout id="settings-navigation" direction="vertical">
+                        <sizing><horizontal method="fixed">92</horizontal><vertical method="fill">100</vertical></sizing>
+                        <gap>6</gap>
+                    </flow-layout>
+                    <scroll direction="vertical">
+                        <flow-layout direction="vertical">
+                            <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
+                            <gap>6</gap>
+                            <padding><right>6</right></padding>
+                            <children>
+                                <flow-layout id="settings-confirmation" direction="vertical">
+                                    <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
+                                    <gap>6</gap>
+                                </flow-layout>
+                                <flow-layout id="settings-page" direction="vertical">
+                                    <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
+                                </flow-layout>
+                            </children>
+                        </flow-layout>
+                        <sizing><horizontal method="expand">100</horizontal><vertical method="fill">100</vertical></sizing>
+                    </scroll>
+                </children>
+            </flow-layout>
+        </settings-host>
+        <combat-settings>
+            <flow-layout direction="vertical">
+                <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
+                <gap>6</gap>
+            </flow-layout>
+        </combat-settings>
+        <camera-preview>
+            <flow-layout direction="vertical">
+                <sizing><horizontal method="fixed">240</horizontal><vertical method="content">0</vertical></sizing>
+                <positioning type="absolute">8,8</positioning>
+                <padding><all>8</all></padding>
+                <gap>6</gap>
+            </flow-layout>
+        </camera-preview>
+    </templates>
+</owo-ui>

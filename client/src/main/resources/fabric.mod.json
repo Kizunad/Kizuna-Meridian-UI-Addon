@@ -9,7 +9,9 @@
   "environment": "client",
   "entrypoints": {
     "kizuna_inventory_ui": ["dev.kizuna.meridian.ui.client.BodyUiModule",
-      "dev.kizuna.meridian.ui.client.CombatUiModule"]
+      "dev.kizuna.meridian.ui.client.CombatUiModule",
+      "dev.kizuna.meridian.ui.client.settings.SettingsUiModule"],
+    "meridian_settings": ["dev.kizuna.meridian.ui.client.settings.combat.CombatSettingsProvider"]
   },
   "depends": {
     "java": ">=25",

@@ -129,3 +129,46 @@ tasks.named('runCombatSlotTest') {
         }
     }
 }
+
+// 姿态设置使用真实客户端、独立存档与输入分发器，验证记录保留在 build 中。
+sourceSets {
+    settingsTest {
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+    }
+}
+loom {
+    mods {
+        meridian_ui_settings_test { sourceSet sourceSets.settingsTest }
+    }
+    runs {
+        stanceSettingsTest {
+            client()
+            source sourceSets.settingsTest
+            runDir 'build/stance-settings-test'
+            programArgs '--quickPlaySingleplayer', 'stance-settings-test', '--width', '1280', '--height', '960'
+        }
+    }
+}
+tasks.register('prepareStanceSettingsWorld', Copy) {
+    from new File(kizunaWorkspace.directory('progression'), 'fabric/build/gametest/world')
+    into layout.buildDirectory.dir('stance-settings-test/saves/stance-settings-test')
+    exclude 'session.lock'
+}
+tasks.named('runStanceSettingsTest') {
+    dependsOn tasks.named('prepareStanceSettingsWorld')
+    def report = layout.buildDirectory.file('stance-settings-results.txt')
+    doFirst {
+        report.get().asFile.text = 'success=false\n'
+        def options = layout.buildDirectory.file('stance-settings-test/options.txt').get().asFile
+        if (!options.exists()) {
+            options.parentFile.mkdirs()
+            options.text = 'onboardAccessibility:false\nlang:zh_cn\nguiScale:2\n'
+        }
+    }
+    doLast {
+        if (!report.get().asFile.text.startsWith('success=true')) {
+            throw new GradleException("姿态设置客户端验收失败：${report.get().asFile}")
+        }
+    }
+}
