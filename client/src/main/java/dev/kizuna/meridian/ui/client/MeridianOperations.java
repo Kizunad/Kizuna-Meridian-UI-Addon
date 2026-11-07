@@ -50,6 +50,9 @@ final class MeridianOperations {
                     throw UiErrors.invalid(UiErrors.INVALID_OPERATION);
                 }
             }
+            if (!operation.getPrimaryMeterId().isEmpty() && !meterIds.contains(operation.getPrimaryMeterId())) {
+                throw UiErrors.invalid(UiErrors.INVALID_OPERATION);
+            }
         }
         updates.put(namespace, update);
     }

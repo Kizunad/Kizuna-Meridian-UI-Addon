@@ -10,6 +10,8 @@ import org.joml.Vector3f;
 
 /** 从真实在途和经脉网格提取展示轨迹；路径缓存随构型变化失效。 */
 public final class MeridianFlow {
+    private static final int MAX_FLIGHTS = 96;
+    private static final int MIN_TRAVEL_MILLIS = 50;
     private final Map<String, BodyVisual> visuals = new HashMap<>();
     private final BodyScene scene;
     private final MeridianRouteProvider routeProvider;
@@ -36,6 +38,31 @@ public final class MeridianFlow {
             routes.clear();
             flights.clear();
         }
+        Set<String> hiddenConnections = hiddenConnections(body);
+        Set<String> current = new HashSet<>();
+        for (QiTransit transit : body.getTransitsList()) {
+            if (transit.hasCircuit()) {
+                updateCircuit(transit, hiddenConnections, current);
+                continue;
+            }
+            boolean freeQi = transit.getCargo().getEntriesList().stream()
+                    .anyMatch(qi -> QiDensity.phase(qi.getDensity()) == QiPhase.FREE);
+            if (transit.getStatus() != TransitStatus.MOVING || !freeQi || current.size() >= MAX_FLIGHTS
+                    || hiddenConnections.contains(transit.getConnectionId())) {
+                continue;
+            }
+            List<Vector3f> path = routes.computeIfAbsent(transit.getConnectionId(), this::route);
+            if (path.size() < 2) {
+                continue;
+            }
+            current.add(transit.getId());
+            flights.computeIfAbsent(transit.getId(), id -> new Flight(path, System.nanoTime(),
+                    Math.max(MIN_TRAVEL_MILLIS, transit.getArrivalMillis() - body.getSettledAt().getElapsedMillis())));
+        }
+        flights.keySet().retainAll(current);
+    }
+
+    private Set<String> hiddenConnections(BodySnapshot body) {
         // 隐藏层级的自然扩散仍由核心执行；光迹不能泄露未解锁经脉的几何。
         lockedPorts.clear();
         for (MeridianDefinition meridian : structure.getMeridiansList()) {
@@ -50,40 +77,32 @@ public final class MeridianFlow {
                 hiddenConnections.add(connection.getId());
             }
         }
-        Set<String> current = new HashSet<>();
-        for (QiTransit transit : body.getTransitsList()) {
-            if (transit.hasCircuit()) {
-                // 受控闭环按权威工作进度沿整条真实路线显示，不按单段到达时间猜测位置。
-                var path = new ArrayList<Vector3f>();
-                for (String routeId : transit.getCircuit().getConnectionIdsList()) {
-                    if (hiddenConnections.contains(routeId)) {
-                        path.clear();
-                        break;
-                    }
-                    path.addAll(routes.computeIfAbsent(routeId, this::route));
-                }
-                if (path.size() >= 2) {
-                    current.add(transit.getId());
-                    double progress = transit.getCircuit().getWorkMillis() / transit.getCircuit().getDurationMillis();
-                    flights.put(transit.getId(), new Flight(path, System.nanoTime(), 1, progress));
-                }
-                continue;
+        return hiddenConnections;
+    }
+
+    private void updateCircuit(QiTransit transit, Set<String> hiddenConnections, Set<String> current) {
+        // 受控闭环按真实整条路线与权威工作进度显示，重复推送不重启光迹。
+        var path = new ArrayList<Vector3f>();
+        var circuit = transit.getCircuit();
+        for (String routeId : circuit.getConnectionIdsList()) {
+            if (hiddenConnections.contains(routeId)) {
+                return;
             }
-            boolean freeQi = transit.getCargo().getEntriesList().stream()
-                    .anyMatch(qi -> QiDensity.phase(qi.getDensity()) == QiPhase.FREE);
-            if (transit.getStatus() != TransitStatus.MOVING || !freeQi || current.size() >= 96
-                    || hiddenConnections.contains(transit.getConnectionId())) {
-                continue;
-            }
-            List<Vector3f> path = routes.computeIfAbsent(transit.getConnectionId(), this::route);
-            if (path.size() < 2) {
-                continue;
-            }
-            current.add(transit.getId());
-            flights.computeIfAbsent(transit.getId(), id -> new Flight(path, System.nanoTime(),
-                    Math.max(50, transit.getArrivalMillis() - body.getSettledAt().getElapsedMillis())));
+            path.addAll(routes.computeIfAbsent(routeId, this::route));
         }
-        flights.keySet().retainAll(current);
+        if (path.size() < 2) {
+            return;
+        }
+        String id = transit.getId();
+        current.add(id);
+        double progress = circuit.getWorkMillis() / circuit.getDurationMillis();
+        Flight existing = flights.get(id);
+        long now = System.nanoTime();
+        if (existing == null || !existing.points.equals(path)) {
+            flights.put(id, new Flight(path, now, 1, progress));
+        } else {
+            existing.retarget(progress, now);
+        }
     }
 
     Collection<Flight> flights() {
@@ -212,11 +231,15 @@ public final class MeridianFlow {
     }
 
     static final class Flight {
+        private static final double SNAPSHOT_BLEND_NANOS = 250_000_000;
+        private static final double NANOS_PER_MILLI = 1_000_000;
         private final List<Vector3f> points;
         private final double[] lengths;
         private final long startedNanos;
         private final long durationMillis;
-        private final double controlledProgress;
+        private double controlledProgress;
+        private double previousProgress;
+        private long receivedNanos;
 
         Flight(List<Vector3f> points, long startedNanos, long durationMillis) {
             // 普通运输仍沿原到达时长插值。
@@ -229,6 +252,8 @@ public final class MeridianFlow {
             this.startedNanos = startedNanos;
             this.durationMillis = durationMillis;
             this.controlledProgress = controlledProgress;
+            previousProgress = controlledProgress;
+            receivedNanos = startedNanos;
             lengths = new double[points.size()];
             for (int index = 1; index < points.size(); index++) {
                 lengths[index] = lengths[index - 1] + points.get(index - 1).distance(points.get(index));
@@ -236,20 +261,51 @@ public final class MeridianFlow {
         }
 
         Vector3f point(long now, double trail) {
-            // 到达预期终点后等下一份权威快照，不循环制造第二份运输。
-            double progress = Math.max(0, Math.min(1, (now - startedNanos) / (durationMillis * 1_000_000.0) - trail));
-            if (controlledProgress >= 0) {
-                progress = Math.max(0, controlledProgress - trail);
+            // 在两个已确认位置之间平滑显示，绝不外推到服务端尚未到达的关口。
+            double position;
+            if (controlled()) {
+                position = displayedProgress(now);
+            } else {
+                position = (now - startedNanos) / (durationMillis * NANOS_PER_MILLI);
             }
+            double progress = Math.max(0, Math.min(1, position - trail));
             double distance = progress * lengths[lengths.length - 1];
             for (int index = 1; index < lengths.length; index++) {
                 if (lengths[index] >= distance) {
                     double segment = lengths[index] - lengths[index - 1];
-                    float fraction = segment > 0 ? (float) ((distance - lengths[index - 1]) / segment) : 0;
+                    float fraction = 0;
+                    if (segment > 0) {
+                        fraction = (float) ((distance - lengths[index - 1]) / segment);
+                    }
                     return new Vector3f(points.get(index - 1)).lerp(points.get(index), fraction);
                 }
             }
             return new Vector3f(points.get(points.size() - 1));
+        }
+
+        boolean controlled() {
+            // 受控闭环的位置由工作进度提供，普通扩散仍按到达时间显示。
+            return controlledProgress >= 0;
+        }
+
+        void retarget(double progress, long now) {
+            // 同一快照重复到达不能重启插值；换圈从起点开始，不沿整圈倒放。
+            if (progress == controlledProgress) {
+                return;
+            }
+            double from = displayedProgress(now);
+            if (progress < controlledProgress) {
+                from = 0;
+            }
+            previousProgress = from;
+            controlledProgress = progress;
+            receivedNanos = now;
+        }
+
+        private double displayedProgress(long now) {
+            // 一个推送周期内追上已知位置，断流后停在最后确认的进度。
+            double fraction = Math.max(0, Math.min(1, (now - receivedNanos) / SNAPSHOT_BLEND_NANOS));
+            return previousProgress + (controlledProgress - previousProgress) * fraction;
         }
     }
 }

@@ -2,17 +2,40 @@ package dev.kizuna.meridian.ui.client;
 
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.*;
 import dev.kizuna.inventoryui.client.component.ResponsiveLayout;
+import dev.kizuna.inventoryui.client.WindowInputHandler;
 import dev.kizuna.meridian.protocol.pb.GatheringMessages.GatheringView;
 import io.wispforest.owo.ui.container.FlowLayout;
 import io.wispforest.owo.ui.parsing.UIModelLoader;
+import io.wispforest.owo.ui.core.Insets;
+import io.wispforest.owo.ui.core.Positioning;
+import io.wispforest.owo.ui.core.Sizing;
 import java.util.Map;
 import java.util.function.Consumer;
 import net.minecraft.resources.Identifier;
+import net.minecraft.client.input.KeyEvent;
 
 import static dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathAction.*;
 
 /** 可重复进入的手动吐纳窗口；身体预览继续保持只读。 */
 public final class CultivationPanel {
+    private static final int NOTE_PADDING = 6;
+    private static final int NOTE_TOP = 4;
+    private static final int NOTE_LINES = 2;
+    private static final int NOTE_LINE_HEIGHT = 11;
+    private static final int NOTE_WIDTH = 420;
+    private static final int NOTE_MIN_WIDTH = 120;
+    private static final int NOTE_HEIGHT = 28;
+    private static final int NOTE_MARGIN = 40;
+    private static final int NOTE_BOTTOM = 94;
+    private static final int COMPACT_NOTE_BOTTOM = 122;
+    private static final int AUTOMATIC_WIDTH = 100;
+    private static final int AUTOMATIC_HEIGHT = 27;
+    private static final int AUTOMATIC_BOTTOM = 68;
+    private static final int COMPACT_AUTOMATIC_BOTTOM = 60;
+    private static final int CENTER = 50;
+    private static final int FULL = 100;
+    private static final double AIM_CENTER = 0.5;
+    private static final double AIM_HEIGHT = 0.4;
     private final FlowLayout root;
     private final BreathingCanvas canvas;
     private final BreathingMeters meters;
@@ -20,9 +43,10 @@ public final class CultivationPanel {
     private GatheringView view;
     private boolean pending;
     private boolean tutorial;
-    private final io.wispforest.owo.ui.component.CheckboxComponent automatic;
+    private final LayerToggle automatic;
     private final AutomaticNote automaticNote = new AutomaticNote();
-    private boolean syncingAutomatic;
+    private boolean automaticSelected;
+    private boolean startRequested;
 
     public CultivationPanel(BodyScene scene, Consumer<BreathControl> sender) {
         // XML 提供整幅场景；各控件随后叠加在同一场景内部。
@@ -34,45 +58,60 @@ public final class CultivationPanel {
         ActionRow action = new ActionRow(this::actionLabel, this::canAct, this::act);
         action.id("breathing-start");
         meters = new BreathingMeters(content, action);
-        automatic = io.wispforest.owo.ui.component.UIComponents.checkbox(net.minecraft.network.chat.Component.literal("自动吐纳"));
+        automatic = new LayerToggle("自动吐纳", () -> automaticSelected, this::toggleAutomatic);
         automatic.id("breathing-automatic");
-        automatic.positioning(io.wispforest.owo.ui.core.Positioning.relative(50, 100));
-        automatic.margins(io.wispforest.owo.ui.core.Insets.bottom(72));
-        automatic.onChanged(checked -> {
-            // 闲置时只选择下一次模式；活动中提交切换意图，费用由服务器处理。
-            if (!syncingAutomatic && this.view != null && this.view.getBreathing().getActive()) {
-                sender.accept(BreathControl.newBuilder().setAction(SET_AUTOMATIC_BREATHING)
-                        .setAutomatic(checked).setAimX(.5).setAimY(.4).setAimZ(.5).build());
-            }
-        });
+        automatic.sizing(Sizing.fixed(AUTOMATIC_WIDTH), Sizing.fixed(AUTOMATIC_HEIGHT));
+        automatic.positioning(Positioning.relative(CENTER, FULL));
         content.child(automatic);
         // 勾选后在复选框上方常显代价说明，不能只藏在悬浮提示里；复选框与说明最后加入，按子组件顺序绘制在最上层。
-        automaticNote.positioning(io.wispforest.owo.ui.core.Positioning.relative(50, 100));
-        automaticNote.margins(io.wispforest.owo.ui.core.Insets.bottom(94));
+        automaticNote.positioning(Positioning.relative(CENTER, FULL));
         content.child(automaticNote);
-        root = new ResponsiveLayout(content, (width, height) -> {
-            // 说明条随场景宽度收窄，紧凑窗口折成两行仍完整显示停止线和效率；紧凑时纳入量上移，说明条再上移避开它。
-            meters.arrange(width, height);
-            boolean compact = width < BreathingMeters.COMPACT_WIDTH;
-            // 紧凑按钮更矮，复选框紧贴按钮上方，避开右侧上移的纳入量。
-            automatic.margins(io.wispforest.owo.ui.core.Insets.bottom(compact ? 64 : 72));
-            automaticNote.horizontalSizing(io.wispforest.owo.ui.core.Sizing.fixed(Math.max(120, Math.min(420, width - 40))));
-            automaticNote.margins(io.wispforest.owo.ui.core.Insets.bottom(compact ? 122 : 94));
-        });
+        root = new BreathingRoot(content);
+    }
+
+    private void arrange(int width, int height) {
+        // 紧凑窗口把说明移到纳入量上方，开关仍紧邻开始按钮。
+        meters.arrange(width, height);
+        boolean compact = width < BreathingMeters.COMPACT_WIDTH;
+        automatic.margins(Insets.bottom(compact ? COMPACT_AUTOMATIC_BOTTOM : AUTOMATIC_BOTTOM));
+        int noteWidth = Math.max(NOTE_MIN_WIDTH, Math.min(NOTE_WIDTH, width - NOTE_MARGIN));
+        automaticNote.horizontalSizing(Sizing.fixed(noteWidth));
+        automaticNote.margins(Insets.bottom(compact ? COMPACT_NOTE_BOTTOM : NOTE_BOTTOM));
+    }
+
+    private void toggleAutomatic() {
+        // 空闲只保存下一次选择；运行中沿用权威切换请求，不由控件结算费用。
+        automaticSelected = !automaticSelected;
+        if (view != null && view.getBreathing().getActive()) {
+            sender.accept(control(SET_AUTOMATIC_BREATHING));
+        }
+    }
+
+    private BreathControl control(BreathAction action) {
+        // 模式切换和开始共用瞄准默认值，服务端继续校验真实可用能力。
+        return BreathControl.newBuilder()
+                .setAction(action)
+                .setAutomatic(automaticSelected)
+                .setAimX(AIM_CENTER)
+                .setAimY(AIM_HEIGHT)
+                .setAimZ(AIM_CENTER)
+                .build();
     }
 
     private String automaticDescription() {
-        // 停止线与效率来自服务端视图，客户端不写死自动规则。
+        // 暂停线、恢复线与效率来自服务端视图，客户端不写死自动规则。
         BreathingView breath = view.getBreathing();
         return String.format(java.util.Locale.ROOT,
-                "自动吐纳：持续消耗呼吸耐力（膈肌），不耗精力；呼吸耐力低于%.0f%%自动停下；同样碰到的灵气只吸收手动的%.0f%%。",
-                breath.getAutomaticMinimumStaminaRatio() * 100, breath.getAutomaticCaptureEfficiency() * 100);
+                "低于%.0f%%暂停，恢复至%.0f%%继续。\n仅耗呼吸耐力，效率为手动的%.0f%%。",
+                breath.getAutomaticMinimumStaminaRatio() * FULL,
+                breath.getAutomaticResumeStaminaRatio() * FULL,
+                breath.getAutomaticCaptureEfficiency() * FULL);
     }
 
     private final class AutomaticNote extends io.wispforest.owo.ui.base.BaseUIComponent {
         AutomaticNote() {
             // 宽度由窗口布局调整，高度固定容纳两行说明。
-            sizing(io.wispforest.owo.ui.core.Sizing.fixed(420), io.wispforest.owo.ui.core.Sizing.fixed(28));
+            sizing(Sizing.fixed(NOTE_WIDTH), Sizing.fixed(NOTE_HEIGHT));
             id("breathing-automatic-note");
         }
 
@@ -83,17 +122,19 @@ public final class CultivationPanel {
         }
 
         @Override
-        public void draw(io.wispforest.owo.ui.core.OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
+        public void draw(io.wispforest.owo.ui.core.OwoUIGraphics context, int mouseX, int mouseY,
+                         float partialTicks, float delta) {
             // 只在勾选自动或服务端正在自动时显示，未勾选不占用场景。
-            if (view == null || !view.hasBreathing() || !automatic.selected()) {
+            if (view == null || !view.hasBreathing() || !automaticSelected) {
                 return;
             }
             var font = net.minecraft.client.Minecraft.getInstance().font;
-            context.fill(x, y, x + width, y + height, 0xC8061016);
-            var lines = font.split(net.minecraft.network.chat.Component.literal(automaticDescription()), Math.max(1, width - 12));
-            for (int line = 0; line < Math.min(2, lines.size()); line++) {
-                var wrapped = lines.get(line);
-                context.text(font, wrapped, x + (width - font.width(wrapped)) / 2, y + 4 + line * 11, 0xFF9BF2B8, false);
+            var lines = font.split(net.minecraft.network.chat.Component.literal(automaticDescription()),
+                    Math.max(1, width - NOTE_PADDING * 2));
+            int color = MeridianTheme.color(dev.kizuna.inventoryui.theme.ThemeTokens.MUTED_TEXT);
+            for (int line = 0; line < Math.min(NOTE_LINES, lines.size()); line++) {
+                context.text(font, lines.get(line), x + NOTE_PADDING, y + NOTE_TOP + line * NOTE_LINE_HEIGHT,
+                        color, false /* shadow */);
             }
         }
     }
@@ -115,9 +156,7 @@ public final class CultivationPanel {
         this.pending = pending;
         if (view != null) {
             if (view.getBreathing().getActive() || wasActive) {
-                syncingAutomatic = true;
-                automatic.checked(view.getBreathing().getAutomatic());
-                syncingAutomatic = false;
+                automaticSelected = view.getBreathing().getAutomatic();
             }
             // 悬浮提示与常显说明使用同一份权威停止线和效率。
             if (view.hasBreathing()) {
@@ -160,14 +199,41 @@ public final class CultivationPanel {
             BreathingTutorial.remember();
             canvas.tutorial(false);
         }
-        sender.accept(BreathControl.newBuilder().setAction(BEGIN_BREATHING)
-                .setAutomatic(automatic.selected())
-                .setAimX(.5).setAimY(.4).setAimZ(.5).build());
+        startRequested = true;
+        sender.accept(control(BEGIN_BREATHING));
     }
 
     public void close() {
         // 关闭场景结束手动输入；已入账加工和在途仍由宿主完成。
         canvas.stopInput();
+        if (startRequested && (view == null || !view.getBreathing().getActive())) {
+            sender.accept(control(END_BREATHING));
+        }
         canvas.dispose();
+    }
+
+    private final class BreathingRoot extends FlowLayout implements WindowInputHandler {
+        BreathingRoot(FlowLayout content) {
+            // 根组件接收工作区生命周期，画布仍拥有自己的透视镜头与打坐模型。
+            super(Sizing.fill(FULL), Sizing.fill(FULL), Algorithm.VERTICAL);
+            child(new ResponsiveLayout(content, CultivationPanel.this::arrange));
+        }
+
+        @Override
+        public boolean keyPressed(KeyEvent event) {
+            // 吐纳使用鼠标，未消费的键交回工作区。
+            return false;
+        }
+
+        @Override
+        public void keyReleased(KeyEvent event) {
+            // 没有持续键盘输入需要释放。
+        }
+
+        @Override
+        public void cancelInput() {
+            // 切换窗口或最小化时只释放吸呼方向，自动吐纳继续运行。
+            canvas.releaseInput();
+        }
     }
 }

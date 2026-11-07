@@ -10,35 +10,53 @@ import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
+import dev.kizuna.inventoryui.theme.ThemeTokens;
 
-/** 身体查看器自己的勾选行；不使用原版按钮纹理与控件。 */
-final class LayerToggle extends BaseUIComponent {
+/** 经脉窗口共用的勾选行；状态由调用方提供，绘制使用当前主题。 */
+public final class LayerToggle extends BaseUIComponent {
+    private static final int FULL = 100;
+    private static final int HEIGHT = 27;
+    private static final int BOX_LEFT = 7;
+    private static final int BOX_TOP = 8;
+    private static final int BOX_SIZE = 10;
+    private static final int MARK_INSET = 3;
+    private static final int TEXT_LEFT = 24;
+    private static final int TEXT_TOP = 9;
+    private static final int TEXT_END = 2;
     private final String label;
     private final BooleanSupplier checked;
     private final Runnable toggle;
 
-    LayerToggle(String label, BooleanSupplier checked, Runnable toggle) {
+    public LayerToggle(String label, BooleanSupplier checked, Runnable toggle) {
         // 状态直接查询面板，程序切层和鼠标勾选不会保留两份相互漂移的选中值。
         this.label = label;
         this.checked = checked;
         this.toggle = toggle;
-        sizing(Sizing.fill(100), Sizing.fixed(27));
+        sizing(Sizing.fill(FULL), Sizing.fixed(HEIGHT));
         cursorStyle(CursorStyle.HAND);
         tooltip(Component.literal(label));
     }
 
     @Override
     public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
-        // 平面勾选框与画布使用同一色系；文字和方框都属于一个点击目标。
+        // 勾选标记区分开关，文字保持主题对比度，键盘焦点同样可见。
         boolean enabled = checked.getAsBoolean();
-        context.fill(x, y, x + width, y + height, hovered ? 0xFF283B42 : 0xFF1B2A31);
-        int color = enabled ? 0xFFE3C37B : 0xFF80979F;
-        context.outline(x + 7, y + 8, 10, 10, color);
+        var focus = focusHandler();
+        boolean highlighted = hovered || (focus != null && focus.focused() == this);
+        String background = highlighted ? ThemeTokens.CONTROL_HOVER : ThemeTokens.CONTROL;
+        String foreground = enabled ? ThemeTokens.TEXT : ThemeTokens.MUTED_TEXT;
+        int textColor = MeridianTheme.color(foreground);
+        int boxX = x + BOX_LEFT;
+        int boxY = y + BOX_TOP;
+        context.fill(x, y, x + width, y + height, MeridianTheme.color(background));
+        context.outline(boxX, boxY, BOX_SIZE, BOX_SIZE, textColor);
         if (enabled) {
-            context.fill(x + 10, y + 11, x + 14, y + 15, color);
+            context.fill(boxX + MARK_INSET, boxY + MARK_INSET,
+                    boxX + BOX_SIZE - MARK_INSET, boxY + BOX_SIZE - MARK_INSET, textColor);
         }
         var font = Minecraft.getInstance().font;
-        context.text(font, font.plainSubstrByWidth(label, Math.max(0, width - 26)), x + 24, y + 9, color, false);
+        String caption = font.plainSubstrByWidth(label, Math.max(0, width - TEXT_LEFT - TEXT_END));
+        context.text(font, caption, x + TEXT_LEFT, y + TEXT_TOP, textColor, false /* shadow */);
     }
 
     @Override

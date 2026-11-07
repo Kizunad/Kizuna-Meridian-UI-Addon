@@ -12,7 +12,9 @@ import io.wispforest.owo.ui.core.Sizing;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.PlayerModelType;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -31,11 +33,11 @@ import java.util.function.Consumer;
 
 /** 通用三角网格画布，复用 Inventory UI 的相机，实现身体对象的精确面选取。 */
 public final class BodyCanvas extends BaseUIComponent {
-    private static final int BACKGROUND = 0xFF131F25;
-    private static final int OPENING_BACKGROUND = 0xFF0E1216;
     private static final int SELECTED = 0xF6D888;
     private static final float DEPTH_SCALE = 0.1f;
     private static final double CLICK_DISTANCE_PIXELS = 4;
+    private static final int CIRCUIT_IMAGE_SIZE = 28;
+    private static final int CIRCUIT_TEXTURE_SIZE = 32;
     private final Consumer<BodyVisual> selection;
     private final Runnable showOverview;
     private final ModelPreviewCamera camera = new ModelPreviewCamera();
@@ -56,6 +58,17 @@ public final class BodyCanvas extends BaseUIComponent {
     private BodySceneRenderer renderer;
     private List<Marker> markers = List.of();
     private int transitColor = 0xFFFFE48A;
+    private Identifier circuitImage;
+
+    public void circuitImage(Identifier texture) {
+        // 生物附属提供气团贴图，位置始终从真实闭环在途读取。
+        circuitImage = java.util.Objects.requireNonNull(texture);
+    }
+
+    public void clearCircuitImage() {
+        // 场景关闭后释放附属贴图选择，不影响其他经脉窗口。
+        circuitImage = null;
+    }
 
     /** 模型空间实线圆环；半径和线宽均为屏幕像素，生物附属决定颜色含义。 */
     public record Marker(float x, float y, float z, float radiusPixels, float thicknessPixels, int color) { }
@@ -223,12 +236,12 @@ public final class BodyCanvas extends BaseUIComponent {
         }
         previousFrame = now;
         // 模型画进画布自己的画中画纹理，独立深度；底色先填，纹理随后按 GUI 顺序叠上，文字和浮窗不受模型深度影响。
+        context.fill(x, y, x + width, y + height,
+                MeridianTheme.color(dev.kizuna.inventoryui.theme.ThemeTokens.PREVIEW_BACKGROUND));
         BodySceneRenderer.Scene scene;
         if (flow != null) {
-            context.fill(x, y, x + width, y + height, OPENING_BACKGROUND);
             scene = openingScene(now, elapsedSeconds);
         } else {
-            context.fill(x, y, x + width, y + height, BACKGROUND);
             scene = inspectionScene(now);
         }
         if (width <= 0 || height <= 0) {
@@ -240,6 +253,28 @@ public final class BodyCanvas extends BaseUIComponent {
         }
         context.guiRenderState.addPicturesInPictureState(BodySceneRenderer.State.of(renderer, scene, false,
                 x, y, x + width, y + height, new Matrix3x2f(context.pose()), context.scissorStack.peek()));
+        drawCircuitImages(context, now);
+    }
+
+    private void drawCircuitImages(OwoUIGraphics context, long now) {
+        // 透明气团随模型投影并受画布裁剪；静态模式关闭移动图像，保留路线与关口。
+        if (circuitImage == null || flow == null || EffectSettings.reducedMotion()) {
+            return;
+        }
+        Matrix4f model = modelTransform();
+        context.enableScissor(x, y, x + width, y + height);
+        for (MeridianFlow.Flight flight : flow.flights()) {
+            if (!flight.controlled()) {
+                continue;
+            }
+            Vector3f point = model.transformPosition(flight.point(now, 0));
+            int left = x + Math.round(point.x) - CIRCUIT_IMAGE_SIZE / 2;
+            int top = y + Math.round(point.y) - CIRCUIT_IMAGE_SIZE / 2;
+            context.blit(RenderPipelines.GUI_TEXTURED, circuitImage, left, top, 0, 0,
+                    CIRCUIT_IMAGE_SIZE, CIRCUIT_IMAGE_SIZE, CIRCUIT_TEXTURE_SIZE, CIRCUIT_TEXTURE_SIZE,
+                    CIRCUIT_TEXTURE_SIZE, CIRCUIT_TEXTURE_SIZE);
+        }
+        context.disableScissor();
     }
 
     private BodySceneRenderer.Scene inspectionScene(long now) {

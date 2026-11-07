@@ -11,6 +11,10 @@ import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
 import dev.kizuna.meridian.protocol.pb.OpeningMessages.*;
 import dev.kizuna.meridian.protocol.pb.MeridianMessages.ResponseEnvelope;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.BodyVisual;
+import dev.kizuna.meridian.protocol.pb.PresentationMessages.BodyTargetKind;
+import dev.kizuna.meridian.ui.api.MeridianAction;
+import dev.kizuna.meridian.ui.api.MeridianSceneExtension;
+import net.minecraft.resources.Identifier;
 import dev.kizuna.meridian.protocol.pb.OperationUiMessages.*;
 import io.wispforest.owo.ui.component.UIComponents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -24,6 +28,8 @@ import java.util.function.Consumer;
 
 /** 经脉窗口与操作意图编排；只读快照、网络回执和镜头各自独立。 */
 final class MeridianWindows {
+    private static final int MAX_REVISION_RETRIES = 2;
+    private static final long REQUEST_TIMEOUT_NANOS = 5_000_000_000L;
     private BodyScene scene;
     private BodySnapshot body;
     private List<MeridianOpeningRule> rules = List.of();
@@ -43,6 +49,10 @@ final class MeridianWindows {
     private final MeridianOperations operations = new MeridianOperations();
     private String chosenOperation = "";
     private String pendingOperation = "";
+    private String pendingAction = "";
+    private long pendingRevision;
+    private int revisionRetries;
+    private boolean awaitingOperationRefresh;
 
     MeridianWindows() {
         // 内置开脉和外部功法走同一个目录，避免维护两套窗口行为。
@@ -105,7 +115,7 @@ final class MeridianWindows {
             if (scene == null || body == null) {
                 return UIComponents.label(Component.literal(UiErrors.MISSING_BODY));
             }
-            practice = new MeridianPanel(scene, body, selected -> {}, () -> {}, true);
+            practice = new MeridianPanel(scene, body, selected -> {}, () -> {}, MeridianPanel.Mode.PRACTICE);
             practiceKey = openedKey;
             practiceLocked = false;
             MeridianPanel opened = practice;
@@ -146,6 +156,7 @@ final class MeridianWindows {
                 return UIComponents.label(Component.literal(UiErrors.MISSING_BODY));
             }
             panel = new MeridianPanel(scene, body, this::select, this::operate);
+            panel.actions(availableActions());
             panelKey = window.key();
             MeridianPanel opened = panel;
             window.scope().addCleanup(() -> {
@@ -163,15 +174,18 @@ final class MeridianWindows {
             // 操作入口绑定当前选择，请求中始终使用最新权威 revision。
             ClientProgression.requireCultivation();
             runtime = owner;
+            selectOpeningCandidate();
             operationKey = window.key();
-            operation = new OpeningPanel(this::caption, this::canOperate, this::operate,
+            var controls = new OpeningPanel.Controls(this::caption, this::canOperate, this::operate,
                     this::choiceCaption, () -> choices().size() > 1, this::chooseNext, this::focusSelected);
+            operation = new OpeningPanel(controls);
             OpeningPanel opened = operation;
             window.scope().addCleanup(() -> {
                 // 关窗不会偷偷取消服务端任务，暂停有明确按钮。
                 if (operation == opened) {
                     operation = null;
                     operationKey = null;
+                    awaitingOperationRefresh = false;
                 }
             });
             show();
@@ -186,6 +200,7 @@ final class MeridianWindows {
         selected = null;
         error = "";
         pending = "";
+        awaitingOperationRefresh = false;
     }
 
     void update(BodySnapshot body) {
@@ -265,11 +280,14 @@ final class MeridianWindows {
 
     private String caption() {
         // 同一按钮为自己的进行中任务提供显式暂停。
-        if (!pending.isEmpty()) {
+        if (!pending.isEmpty() || awaitingOperationRefresh) {
             return "等待确认…";
         }
         MeridianOperationView view = chosen();
-        return view == null ? "暂无可用操作" : view.getActionLabel();
+        if (view == null) {
+            return "暂无可用操作";
+        }
+        return view.getActionLabel();
     }
 
     private boolean canOperate() {
@@ -277,7 +295,8 @@ final class MeridianWindows {
         if (!ClientProgression.canCultivate()) {
             return false;
         }
-        if (body == null || selected == null || !pending.isEmpty() || body.getVitality().getDead()) {
+        if (body == null || selected == null || !pending.isEmpty() || awaitingOperationRefresh
+                || body.getVitality().getDead()) {
             return false;
         }
         MeridianOperationView view = chosen();
@@ -289,16 +308,48 @@ final class MeridianWindows {
         if (!canOperate()) {
             return;
         }
+        revisionRetries = 0;
+        sendOperation(chosen());
+    }
+
+    private void sendOperation(MeridianOperationView view) {
+        // 每次尝试使用最新权威版本及新请求身份；已拒绝的回执不能被当作成功重放。
         pending = UUID.randomUUID().toString();
         sentAt = System.nanoTime();
         error = "";
-        MeridianOperationView view = chosen();
         pendingOperation = view.getId();
-        var request = MeridianOperationRequest.newBuilder().setProtocolVersion(1).setRequestId(pending)
-                .setBodyId(body.getId()).setExpectedRevision(body.getRevision()).setMeridianId(selected.getTargetId())
-                .setOperationId(view.getId()).setOperationVersion(view.getVersion()).setActionId(view.getActionId());
+        pendingAction = view.getActionId();
+        pendingRevision = body.getRevision();
+        var request = MeridianOperationRequest.newBuilder()
+                .setProtocolVersion(1)
+                .setRequestId(pending)
+                .setBodyId(body.getId())
+                .setExpectedRevision(pendingRevision)
+                .setMeridianId(view.getMeridianId())
+                .setOperationId(view.getId())
+                .setOperationVersion(view.getVersion())
+                .setActionId(pendingAction)
+                .build();
         show();
-        operations.send(request.build());
+        operations.send(request);
+    }
+
+    private void retryRefreshedOperation() {
+        // 收完当前帧的快照再取最新卡片，不能在一串回执的中间版本上立刻重发。
+        if (!awaitingOperationRefresh || body == null || body.getRevision() <= pendingRevision) {
+            return;
+        }
+        MeridianOperationView view = chosen();
+        if (view == null || !view.getId().equals(pendingOperation) || !view.getActionId().equals(pendingAction)) {
+            awaitingOperationRefresh = false;
+            return;
+        }
+        if (!view.getEnabled()) {
+            return;
+        }
+        awaitingOperationRefresh = false;
+        revisionRetries++;
+        sendOperation(view);
     }
 
     void receive(ResponseEnvelope response) {
@@ -310,6 +361,14 @@ final class MeridianWindows {
             return;
         }
         pending = "";
+        if (response.hasFailure()
+                && response.getFailure().getCode()
+                == dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode.REVISION_CONFLICT
+                && revisionRetries < MAX_REVISION_RETRIES) {
+            awaitingOperationRefresh = true;
+            show();
+            return;
+        }
         if (response.hasFailure() && pendingOperation.equals(chosenOperation)) {
             if (pendingOperation.startsWith("meridian:opening/")) {
                 error = UiErrors.openingFailure(response.getFailure().getCode());
@@ -322,15 +381,94 @@ final class MeridianWindows {
 
     private void show() {
         // 只投影通用库存摘要，操作卡来自内容包，客户端不重新裁定开脉门槛。
+        if (panel != null) {
+            panel.actions(availableActions());
+        }
         if (body == null || selected == null || operation == null) {
             return;
         }
         MeridianOperationView choice = chosen();
         if (choice == null) {
             choice = OpeningCards.summary(body, selected.getTargetId()).toBuilder()
-                    .setStatus("暂无可用操作").setHint(UiErrors.OPENING_UNAVAILABLE).build();
+                    .setStatus("暂无可用操作")
+                    .setHint(UiErrors.OPENING_UNAVAILABLE)
+                    .build();
         }
         operation.show(selected.getDisplayName(), choice, error);
+    }
+
+    private List<MeridianAction> availableActions() {
+        // 常用窗口与条件操作共享一条有序队列；隐藏项不会留下空位。
+        if (body == null || body.getVitality().getDead()) {
+            return List.of();
+        }
+        var actions = new ArrayList<MeridianAction>();
+        if (ClientProgression.canGather()) {
+            actions.add(windowAction("cultivation", "吐纳", "breathing", "打开独立吐纳窗口。"));
+        }
+        var provider = MeridianSceneExtension.required();
+        if (ClientProgression.canCultivate() && provider.lockedReason().isEmpty()) {
+            actions.add(windowAction("practice", "周天", "circulation", "打开独立周天窗口。"));
+        }
+        if (canOpenOperation()) {
+            actions.add(windowAction("meridian_operation", "开脉", "opening", "选择当前可开拓的经脉。"));
+        }
+        actions.addAll(provider.actions(body));
+        return List.copyOf(actions);
+    }
+
+    private MeridianAction windowAction(String feature, String label, String icon, String hint) {
+        // 重复打开交给工作区聚焦已有独立窗口，不创建嵌套页面。
+        var texture = Identifier.fromNamespaceAndPath("meridian_ui", "textures/gui/actions/" + icon + ".png");
+        return new MeridianAction("meridian-rail-meridian_ui-" + feature, label, texture, hint, () -> {
+            if (feature.equals("meridian_operation")) {
+                selectOpeningCandidate();
+            }
+            runtime.open("meridian_ui:" + feature, null);
+        });
+    }
+
+    boolean canOpenOperation() {
+        // 首次入口只在有可执行的当前阶段目标时出现；活动任务保留暂停入口。
+        return ClientProgression.canCultivate() && openingCandidate() != null;
+    }
+
+    private MeridianOperationView openingCandidate() {
+        // 优先保留正在进行或已选中的目标，其余按权威目录顺序选择。
+        if (body == null || sender == null || body.getVitality().getDead()) {
+            return null;
+        }
+        List<MeridianOperationView> available = body.getMeridianStatesList().stream()
+                .flatMap(state -> operations.views(body, state.getId()).stream())
+                .filter(view -> view.getId().startsWith("meridian:opening/"))
+                .filter(view -> view.getEnabled() || view.getActive())
+                .toList();
+        for (MeridianOperationView candidate : available) {
+            if (candidate.getActive() || selected != null
+                    && candidate.getMeridianId().equals(selected.getTargetId())) {
+                return candidate;
+            }
+        }
+        if (available.isEmpty()) {
+            return null;
+        }
+        return available.get(0);
+    }
+
+    private void selectOpeningCandidate() {
+        // 入口不要求先精准点中细小经脉，自动聚焦服务端认可的可开拓目标。
+        MeridianOperationView candidate = openingCandidate();
+        if (candidate == null) {
+            return;
+        }
+        BodyVisual node = scene.presentation().getVisualsList().stream()
+                .filter(visual -> visual.getTargetKind() == BodyTargetKind.MERIDIAN)
+                .filter(visual -> visual.getTargetId().equals(candidate.getMeridianId()))
+                .findFirst().orElseThrow();
+        select(node);
+        if (panel != null) {
+            panel.canvas().highlight(node);
+        }
     }
 
     private List<MeridianOperationView> choices() {
@@ -390,11 +528,14 @@ final class MeridianWindows {
 
     void tick() {
         // UI tick 只处理客户端请求超时，不推进身体时间或开脉进度。
+        retryRefreshedOperation();
         if (operation != null) {
             operation.focusActions();
         }
-        if (!pending.isEmpty() && System.nanoTime() - sentAt > 5_000_000_000L) {
+        if ((!pending.isEmpty() || awaitingOperationRefresh)
+                && System.nanoTime() - sentAt > REQUEST_TIMEOUT_NANOS) {
             pending = "";
+            awaitingOperationRefresh = false;
             error = UiErrors.OPENING_TIMEOUT;
             show();
         }
@@ -407,6 +548,7 @@ final class MeridianWindows {
             runtime.workspace().windows().close(controls);
         }
         selected = null;
+        awaitingOperationRefresh = false;
     }
 
     boolean open() {

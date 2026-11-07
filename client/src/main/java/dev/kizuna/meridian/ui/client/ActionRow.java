@@ -7,23 +7,26 @@ import io.wispforest.owo.ui.core.Sizing;
 import org.lwjgl.glfw.GLFW;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.resources.Identifier;
+import dev.kizuna.inventoryui.theme.ThemeTokens;
 
 /** 与分层勾选框一致的平面操作行，鼠标和键盘共享执行入口。 */
-final class ActionRow extends BaseUIComponent {
+public final class ActionRow extends BaseUIComponent {
     private static final int HEIGHT = 30;
-    private static final int TEXT = 0xFFE3C37B;
-    private static final int MUTED = 0xFF80979F;
-    private static final int BACKGROUND = 0xFF1B2A31;
-    private static final int HOVER = 0xFF283B42;
+    private static final int INSET = 3;
+    private static final int ICON_SIZE = 28;
+    private static final int ICON_TEXTURE_SIZE = 64;
+    private static final int LABEL_BOTTOM = 14;
+    private Identifier icon;
     private final Supplier<String> label;
     private final BooleanSupplier enabled;
     private final Runnable action;
-    private final long createdNanos = System.nanoTime();
 
-    ActionRow(Supplier<String> label, BooleanSupplier enabled, Runnable action) {
+    public ActionRow(Supplier<String> label, BooleanSupplier enabled, Runnable action) {
         // 文案与可用性按展示状态读取，不保存第二份业务状态。
         this.label = label;
         this.enabled = enabled;
@@ -34,30 +37,46 @@ final class ActionRow extends BaseUIComponent {
 
     @Override
     public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
-        // 少量同心描边按缓慢周期改变透明度，黄光仅作提示，不创建粒子或离屏缓冲。
-        var text = Minecraft.getInstance().font;
-        boolean available = enabled.getAsBoolean();
-        double ageSeconds = (System.nanoTime() - createdNanos) / 1e9;
-        double glow = EffectSettings.reducedMotion() ? .5 : .5 + .5 * Math.sin(ageSeconds * Math.PI / 2);
-        if (available) {
-            for (int inset = 0; inset < 3; inset++) {
-                int alpha = (int) ((12 + 15 * glow) / (inset + 1));
-                context.drawRectOutline(x + inset, y + inset, width - inset * 2, height - inset * 2,
-                        alpha << 24 | 0xE6C76D);
-            }
+        // 鼠标悬停和键盘焦点共用静态强调，禁用态仍可读但不能提交。
+        var focus = focusHandler();
+        var state = MeridianTheme.ButtonState.NORMAL;
+        if (!enabled.getAsBoolean()) {
+            state = MeridianTheme.ButtonState.DISABLED;
+        } else if (hovered || (focus != null && focus.focused() == this)) {
+            state = MeridianTheme.ButtonState.HIGHLIGHTED;
         }
-        context.fill(x + 3, y + 3, x + width - 3, y + height - 3, hovered ? HOVER : BACKGROUND);
-        context.drawRectOutline(x + 3, y + 3, width - 6, height - 6, available ? 0x807D6F45 : 0x403A4B50);
-        String caption = text.plainSubstrByWidth(label.get(), Math.max(0, width - 12));
-        context.text(text, caption, x + (width - text.width(caption)) / 2,
-                y + (height - text.lineHeight) / 2, available ? TEXT : MUTED, false);
+        var bounds = new MeridianTheme.Bounds(x + INSET, y + INSET, width - INSET * 2, height - INSET * 2);
+        if (icon == null) {
+            MeridianTheme.button(context, bounds, label.get(), state);
+        } else {
+            MeridianTheme.button(context, bounds, "", state);
+            drawIcon(context);
+        }
+    }
+
+    public ActionRow icon(Identifier texture) {
+        // 图像与点击区域属于同一控件，键盘操作仍沿用主操作入口。
+        icon = texture;
+        return this;
+    }
+
+    private void drawIcon(OwoUIGraphics context) {
+        // 图标置于文字上方，小窗口仍保留完整的按钮命中区。
+        int left = x + (width - ICON_SIZE) / 2;
+        context.blit(RenderPipelines.GUI_TEXTURED, icon, left, y + INSET * 2, 0, 0,
+                ICON_SIZE, ICON_SIZE, ICON_TEXTURE_SIZE, ICON_TEXTURE_SIZE,
+                ICON_TEXTURE_SIZE, ICON_TEXTURE_SIZE);
+        var font = Minecraft.getInstance().font;
+        String text = font.plainSubstrByWidth(label.get(), Math.max(1, width - INSET * 2));
+        context.text(font, text, x + (width - font.width(text)) / 2, y + height - LABEL_BOTTOM,
+                MeridianTheme.color(ThemeTokens.TEXT), false /* shadow */);
     }
 
     @Override
     public boolean onMouseDown(MouseButtonEvent click, boolean doubled) {
-        // 只响应左键；能否执行由 activate 统一判断。
+        // 主操作只响应左键，其他按键交给组件事件，允许附属登记上下文操作。
         if (click.button() != 0) {
-            return false;
+            return super.onMouseDown(click, doubled);
         }
         return activate();
     }

@@ -16,6 +16,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.ARGB;
+import dev.kizuna.inventoryui.theme.ThemeTokens;
 
 /** 场景内的资源控件；每个控件独立命中，空白处仍交给三维相机与气息操作。 */
 final class BreathingMeters {
@@ -23,6 +24,17 @@ final class BreathingMeters {
     private static final Identifier AIR = Identifier.fromNamespaceAndPath("meridian_ui", "textures/gui/lungs_air.png");
     private static final int AIR_TOP = 20;
     private static final int AIR_BOTTOM = 54;
+    private static final int LUNGS_SIZE = 64;
+    private static final int AIR_CAPTION_TOP = 73;
+    private static final int QI_CAPTION_TOP = 8;
+    private static final int PERCENT = 100;
+    private static final int RESERVE_TOP = 16;
+    private static final int RESERVE_HEIGHT = 4;
+    private static final int STOP_OVERHANG = 3;
+    private static final int FOOTER_CLEARANCE = 28;
+    private static final double NANOS_PER_SECOND = 1_000_000_000.0;
+    private static final double MAX_FRAME_SECONDS = 0.1;
+    private static final double AIR_SMOOTHING_RATE = 14;
     /** 空气填充的染色：浅蓝、85% 不透明，与肺部轮廓贴图叠加。 */
     private static final int AIR_TINT = ARGB.colorFromFloat(.85f, .47f, .77f, .93f);
     static final int COMPACT_WIDTH = 420;
@@ -38,9 +50,9 @@ final class BreathingMeters {
         reserve.positioning(Positioning.relative(50, 0));
         reserve.margins(Insets.top(12));
         air.positioning(Positioning.relative(0, 100));
-        air.margins(Insets.of(0, 12, 12, 0));
+        air.margins(Insets.of(0, FOOTER_CLEARANCE, 12, 0));
         qi.positioning(Positioning.relative(100, 100));
-        qi.margins(Insets.of(0, 12, 0, 12));
+        qi.margins(Insets.of(0, FOOTER_CLEARANCE, 0, 12));
 
         // 按钮位于底部操作提示上方；直接挂载各控件，保留场景空白处的鼠标输入。
         // 各控件晚于画布加入，按子组件顺序绘制在画布之上（owo 0.13 已无 zIndex）。
@@ -56,9 +68,9 @@ final class BreathingMeters {
         // 紧凑场景把纳入量抬到右下按钮上方，避免肺图、按钮和数字争用同一条底边。
         boolean compact = width < COMPACT_WIDTH;
         air.sizing(Sizing.fixed(compact ? 72 : 80), Sizing.fixed(84));
-        air.margins(Insets.of(0, 12, compact ? 6 : 12, 0));
+        air.margins(Insets.of(0, FOOTER_CLEARANCE, compact ? 6 : 12, 0));
         qi.sizing(Sizing.fixed(compact ? 128 : 136), Sizing.fixed(26));
-        qi.margins(Insets.of(0, compact ? 88 : 12, 0, compact ? 6 : 12));
+        qi.margins(Insets.of(0, compact ? 88 : FOOTER_CLEARANCE, 0, compact ? 6 : 12));
         action.sizing(Sizing.fixed(compact ? 104 : 120), Sizing.fixed(compact ? 26 : 30));
         reserve.horizontalSizing(Sizing.fill(compact ? 78 : 64));
     }
@@ -137,52 +149,72 @@ final class BreathingMeters {
         public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
             // 内部掩码限制蓝色填充，保持边框和外部透明；插值只改变展示高度。
             long now = System.nanoTime();
-            double seconds = frameNanos == 0 ? 0 : Math.min(.1, (now - frameNanos) / 1e9);
+            double seconds = 0;
+            if (frameNanos != 0) {
+                seconds = Math.min(MAX_FRAME_SECONDS, (now - frameNanos) / NANOS_PER_SECOND);
+            }
             frameNanos = now;
-            double ratio = breath.getCapacityLiters() > 0 ? breath.getAirLiters() / breath.getCapacityLiters() : 0;
-            shownRatio += (ratio - shownRatio) * (1 - Math.exp(-seconds * 14));
-            int left = x + (width - 64) / 2;
+            double capacity = breath.getCapacityLiters();
+            double ratio = 0;
+            if (capacity > 0) {
+                ratio = breath.getAirLiters() / capacity;
+            }
+            shownRatio += (ratio - shownRatio) * (1 - Math.exp(-seconds * AIR_SMOOTHING_RATE));
+            int left = x + (width - LUNGS_SIZE) / 2;
             // 填充从肺底升到肺顶，透明外边距不计入空气量的显示高度。
             int fillHeight = (int) Math.round((AIR_BOTTOM - AIR_TOP) * Math.max(0, Math.min(1, shownRatio)));
             int fillTop = AIR_BOTTOM - fillHeight;
-            context.blit(RenderPipelines.GUI_TEXTURED, LUNGS, left, y, 0, 0, 64, 64, 64, 64);
+            context.blit(RenderPipelines.GUI_TEXTURED, LUNGS, left, y, 0, 0,
+                    LUNGS_SIZE, LUNGS_SIZE, LUNGS_SIZE, LUNGS_SIZE);
             if (fillHeight > 0) {
                 // 染色写进顶点颜色，只作用于这一次填充。
-                context.blit(RenderPipelines.GUI_TEXTURED, AIR, left, y + fillTop, 0, fillTop, 64, fillHeight, 64, 64,
-                        AIR_TINT);
+                context.blit(RenderPipelines.GUI_TEXTURED, AIR, left, y + fillTop, 0, fillTop,
+                        LUNGS_SIZE, fillHeight, LUNGS_SIZE, LUNGS_SIZE, AIR_TINT);
             }
             var font = Minecraft.getInstance().font;
-            String caption = String.format(Locale.ROOT, "空气 %.0f%%", ratio * 100);
-            context.text(font, caption, x + (width - font.width(caption)) / 2, y + 73, 0xFF8DBBD3, false);
+            String caption = String.format(Locale.ROOT, "空气 %.0f%%", ratio * PERCENT);
+            context.text(font, caption, x + (width - font.width(caption)) / 2, y + AIR_CAPTION_TOP,
+                    MeridianTheme.color(ThemeTokens.TEXT), false /* shadow */);
         }
     }
 
     private final class ReserveGauge extends BaseUIComponent {
         ReserveGauge() {
-            // 黄色条保留原有含义，分别消耗的来源放在悬浮提示。
+            // 余力条使用当前主题，分别消耗的来源放在悬浮提示。
             sizing(Sizing.fill(64), Sizing.fixed(24));
             id("breathing-reserve");
         }
 
         @Override
         public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
-            // 总余力取先耗尽的一项，避免另一项仍高时掩盖实际限制。
-            double remainingRatio = breath.getAutomatic() ? breath.getStaminaRatio()
-                    : Math.min(breath.getStaminaRatio(), breath.getAttentionRatio());
+            // 手动取先耗尽的一项；自动用不同标记区分暂停线和恢复线。
+            double remainingRatio;
+            String label;
+            boolean automatic = breath.getAutomatic();
+            if (automatic) {
+                remainingRatio = breath.getStaminaRatio();
+                label = String.format(Locale.ROOT, "呼吸耐力 %.0f%%（不耗精力）", remainingRatio * PERCENT);
+            } else {
+                remainingRatio = Math.min(breath.getStaminaRatio(), breath.getAttentionRatio());
+                label = "余力";
+            }
             var font = Minecraft.getInstance().font;
-            // 自动吐纳只看呼吸耐力，标题直接写明，并画出服务端停止线。
-            String label = breath.getAutomatic()
-                    ? String.format(Locale.ROOT, "呼吸耐力 %.0f%%（不耗精力）", breath.getStaminaRatio() * 100) : "余力";
-            context.text(font, font.plainSubstrByWidth(label, width), x, y, 0xFFD5B878, false);
-            context.fill(x, y + 16, x + width, y + 20, 0xFF272A26);
+            context.text(font, font.plainSubstrByWidth(label, width), x, y,
+                    MeridianTheme.color(ThemeTokens.TEXT), false /* shadow */);
+            context.fill(x, y + RESERVE_TOP, x + width, y + RESERVE_TOP + RESERVE_HEIGHT,
+                    MeridianTheme.color(ThemeTokens.PROGRESS_TRACK));
             int fillWidth = (int) Math.round(width * Math.max(0, Math.min(1, remainingRatio)));
-            context.fill(x, y + 16, x + fillWidth, y + 20, 0xFFD5B878);
-            if (breath.getAutomatic()) {
+            context.fill(x, y + RESERVE_TOP, x + fillWidth, y + RESERVE_TOP + RESERVE_HEIGHT,
+                    MeridianTheme.color(ThemeTokens.PROGRESS_FILL));
+            if (automatic) {
                 int stopX = x + (int) Math.round(width * breath.getAutomaticMinimumStaminaRatio());
-                context.fill(stopX, y + 13, stopX + 1, y + 23, 0xFFFF5858);
-                String stop = String.format(Locale.ROOT, "低于%.0f%%自动停", breath.getAutomaticMinimumStaminaRatio() * 100);
-                context.text(font, stop, Math.min(x + width - font.width(stop), stopX - font.width(stop) / 2),
-                        y, 0xFFFF8A80, false);
+                context.fill(stopX, y + RESERVE_TOP - STOP_OVERHANG,
+                        stopX + 1, y + RESERVE_TOP + RESERVE_HEIGHT + STOP_OVERHANG,
+                        MeridianTheme.color(ThemeTokens.INPUT_ERROR));
+                int resumeX = x + (int) Math.round(width * breath.getAutomaticResumeStaminaRatio());
+                context.fill(resumeX, y + RESERVE_TOP - STOP_OVERHANG,
+                        resumeX + 1, y + RESERVE_TOP + RESERVE_HEIGHT + STOP_OVERHANG,
+                        MeridianTheme.color(ThemeTokens.PROGRESS_FILL));
             }
         }
     }
@@ -199,7 +231,8 @@ final class BreathingMeters {
             // 纳入量保留两位，能看出每次小批吐纳的变化。
             var font = Minecraft.getInstance().font;
             String caption = String.format(Locale.ROOT, "纳入 %.2f 真元", breath.getStoredQi());
-            context.text(font, font.plainSubstrByWidth(caption, width), x, y + 8, 0xFFA8C8C0, false);
+            context.text(font, font.plainSubstrByWidth(caption, width), x, y + QI_CAPTION_TOP,
+                    MeridianTheme.color(ThemeTokens.TEXT), false /* shadow */);
         }
     }
 }

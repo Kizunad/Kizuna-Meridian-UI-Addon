@@ -63,6 +63,7 @@ public final class BodyPanel {
 
     private void arrange(int width, int height) {
         // 先给标题与说明留位，再从实际余下宽度分配区域，避免百分比列加上侧栏后溢出。
+        MeridianTheme.apply(content);
         int innerWidth = Math.max(1, width - PADDING * 2);
         int top = PADDING + TITLE_HEIGHT;
         int bottom = Math.max(top + 1, height - PADDING - HINT_HEIGHT - GAP);

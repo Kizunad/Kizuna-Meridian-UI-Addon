@@ -14,8 +14,20 @@ import java.util.function.Supplier;
 import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
-/** 附属共用紧凑条形浮窗，选择和执行分开，操作栏始终留在底部。 */
+/** 独立开脉窗口：经脉主图展示适应，条件印记解释准备情况，操作保持在底部。 */
 final class OpeningPanel {
+    private static final int EDGE = 8;
+    private static final int MARGIN = 16;
+    private static final int TITLE_HEIGHT = 14;
+    private static final int STATUS_TOP = 25;
+    private static final int DETAILS_TOP = 46;
+    private static final int CHOICE_DETAILS_TOP = 78;
+    private static final int FOOTER_SPACE = 62;
+    private static final int FEEDBACK_HEIGHT = 20;
+    private static final int MAX_BUTTON_WIDTH = 200;
+    private static final int CHOICE_TOP = 43;
+    private static final int BUTTON_HEIGHT = 30;
+    private static final int ACTION_BOTTOM = 38;
     private final FlowLayout content;
     private final FlowLayout root;
     private final FlowLayout choiceSlot;
@@ -27,13 +39,16 @@ final class OpeningPanel {
     private final ActionRow action;
     private boolean choiceShown = true;
     private final List<OperationMeter> meters = new ArrayList<>();
+    private final OpeningDiagram diagram = new OpeningDiagram();
     private List<String> meterIds = List.of();
     private MeridianOperationView view = MeridianOperationView.getDefaultInstance();
 
-    OpeningPanel(Supplier<String> caption, BooleanSupplier enabled, Runnable start,
-                 Supplier<String> choiceCaption, BooleanSupplier hasChoices, Runnable choose, Runnable focus) {
+    record Controls(Supplier<String> caption, BooleanSupplier enabled, Runnable start,
+                    Supplier<String> choiceCaption, BooleanSupplier hasChoices, Runnable choose, Runnable focus) { }
+
+    OpeningPanel(Controls controls) {
         // XML 管理布局槽，所有附属共享相同卡片结构和输入方式。
-        this.hasChoices = hasChoices;
+        this.hasChoices = controls.hasChoices();
         content = UIModelLoader.get(Identifier.fromNamespaceAndPath("meridian_ui", "opening"))
                 .expandTemplate(FlowLayout.class, "opening-detail", Map.of());
         statusSlot = content.childById(FlowLayout.class, "status");
@@ -43,45 +58,54 @@ final class OpeningPanel {
         // 空状态保留布局槽，不挂载空 Label；owo 的文字悬浮查询要求至少有一行文字。
         feedbackSlot.removeChild(feedbackText);
         choiceSlot = content.childById(FlowLayout.class, "choice");
-        var choice = new ActionRow(choiceCaption, hasChoices, choose);
+        var choice = new ActionRow(controls.choiceCaption(), hasChoices, controls.choose());
         choice.id("gather-choice");
         choiceSlot.child(choice);
-        action = new ActionRow(caption, enabled, start);
+        action = new ActionRow(controls.caption(), controls.enabled(), controls.start());
         action.id("opening-action");
         content.childById(FlowLayout.class, "operation").child(action);
-        for (ActionRow control : List.of(choice, action)) {
+        bindKeys(List.of(choice, action), controls);
+        root = new ResponsiveLayout(content, this::arrange);
+        rebuild();
+    }
+
+    private void bindKeys(List<ActionRow> buttons, Controls controls) {
+        // 浮窗内焦点操作与主模型的快捷键提交同一权威请求。
+        for (ActionRow control : buttons) {
             control.keyPress().subscribe(event -> {
                 // 焦点留在操作浮窗时，F 和 G 仍操作同一场景与权威任务。
                 if (event.modifiers() != 0) {
                     return false;
                 }
                 if (event.key() == GLFW.GLFW_KEY_F) {
-                    focus.run();
+                    controls.focus().run();
                     return true;
                 }
                 if (event.key() == GLFW.GLFW_KEY_G) {
-                    if (enabled.getAsBoolean()) {
-                        start.run();
+                    if (controls.enabled().getAsBoolean()) {
+                        controls.start().run();
                     }
                     return true;
                 }
                 return false;
             });
         }
-        root = new ResponsiveLayout(content, this::arrange);
-        rebuild();
     }
 
     private void arrange(int width, int height) {
-        // 紧凑视口只保留状态条、进度条和动作入口，多个附属可复用同一布局。
-        MeridianPanel.place(content.childById(UIComponent.class, "selection-title"), 8, 8, width - 16, 14);
-        MeridianPanel.place(content.childById(UIComponent.class, "status"), 8, 25, width - 16, 14);
+        // 主图与条件共用滚动内容，操作和失败提示保持可见。
+        MeridianTheme.apply(content);
+        MeridianPanel.place(content.childById(UIComponent.class, "selection-title"), EDGE, EDGE,
+                width - MARGIN, TITLE_HEIGHT);
+        MeridianPanel.place(content.childById(UIComponent.class, "status"), EDGE, STATUS_TOP,
+                width - MARGIN, TITLE_HEIGHT);
         boolean multiple = hasChoices.getAsBoolean();
-        int top = multiple ? 78 : 46;
-        int bottom = 62;
-        MeridianPanel.place(content.childById(UIComponent.class, "details"), 8, top, width - 16, height - top - bottom);
-        MeridianPanel.place(content.childById(UIComponent.class, "feedback"), 8, height - bottom + 2, width - 16, 20);
-        int buttonWidth = Math.min(200, width - 16);
+        int top = multiple ? CHOICE_DETAILS_TOP : DETAILS_TOP;
+        MeridianPanel.place(content.childById(UIComponent.class, "details"), EDGE, top,
+                width - MARGIN, height - top - FOOTER_SPACE);
+        MeridianPanel.place(content.childById(UIComponent.class, "feedback"), EDGE, height - FOOTER_SPACE,
+                width - MARGIN, FEEDBACK_HEIGHT);
+        int buttonWidth = Math.min(MAX_BUTTON_WIDTH, width - MARGIN);
         if (multiple != choiceShown) {
             choiceShown = multiple;
             if (multiple) {
@@ -90,27 +114,30 @@ final class OpeningPanel {
                 content.removeChild(choiceSlot);
             }
         }
-        MeridianPanel.place(choiceSlot, (width - buttonWidth) / 2, 43, buttonWidth, 30);
+        MeridianPanel.place(choiceSlot, (width - buttonWidth) / 2, CHOICE_TOP, buttonWidth, BUTTON_HEIGHT);
         MeridianPanel.place(content.childById(UIComponent.class, "operation"), (width - buttonWidth) / 2,
-                height - 38, buttonWidth, 30);
+                height - ACTION_BOTTOM, buttonWidth, BUTTON_HEIGHT);
     }
 
     void show(String title, MeridianOperationView view, String error) {
-        // 身份和 meter 列表不变时更新现有控件，保留滚动位置和填充插值。
+        // 身份和条件列表不变时更新现有控件，保留滚动位置和主图插值。
         this.view = view;
+        diagram.update(view);
         arrange(root.width(), root.height());
         String heading = title.isBlank() ? "经脉" : title;
-        content.childById(LabelComponent.class, "selection-title").text(net.minecraft.network.chat.Component.literal(heading));
+        var titleLabel = content.childById(LabelComponent.class, "selection-title");
+        titleLabel.text(net.minecraft.network.chat.Component.literal(heading));
         updateText(statusSlot, statusText, view.getStatus(), "");
         String hint = error.isEmpty() ? view.getHint() : error;
         updateText(feedbackSlot, feedbackText, error.isEmpty() ? "" : "操作未完成", hint);
-        var ids = view.getMetersList().stream().map(MeridianOperationMeter::getId).toList();
+        List<MeridianOperationMeter> conditions = conditions();
+        var ids = conditions.stream().map(MeridianOperationMeter::getId).toList();
         if (!ids.equals(meterIds)) {
             meterIds = ids;
             rebuild();
         } else {
             for (int index = 0; index < meters.size(); index++) {
-                meters.get(index).update(view.getMeters(index));
+                meters.get(index).update(conditions.get(index));
             }
         }
     }
@@ -136,15 +163,23 @@ final class OpeningPanel {
     }
 
     private void rebuild() {
-        // 仅在卡片结构改变时重建进度条，实时刷新只更新已有控件。
+        // 主图只展示声明的主进度，其余条件使用印记和状态，不重复堆叠数值。
         FlowLayout column = content.childById(FlowLayout.class, "meters");
         column.clearChildren();
         meters.clear();
-        for (MeridianOperationMeter value : view.getMetersList()) {
+        column.child(diagram);
+        for (MeridianOperationMeter value : conditions()) {
             var meter = new OperationMeter(value);
             meters.add(meter);
             column.child(meter);
         }
+    }
+
+    private List<MeridianOperationMeter> conditions() {
+        // 主进度已由图像展示，条件区只保留其他服务端要求。
+        return view.getMetersList().stream()
+                .filter(meter -> !meter.getId().equals(view.getPrimaryMeterId()))
+                .toList();
     }
 
     FlowLayout root() {

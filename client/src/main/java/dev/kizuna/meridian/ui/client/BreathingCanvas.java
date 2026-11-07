@@ -25,7 +25,12 @@ import static dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathAction.*;
 
 /** 独立深度缓冲的三维吐纳场景；逐帧只插值展示，身体资源由宿主结算。 */
 public final class BreathingCanvas extends BaseUIComponent {
-    private static final int BACKGROUND = 0xFF030507;
+    private static final int TEXT_PADDING = 12;
+    private static final int HINT_BOTTOM = 18;
+    private static final int TUTORIAL_WIDTH = 300;
+    private static final int TUTORIAL_PADDING = 8;
+    private static final int TUTORIAL_TOP = 48;
+    private static final int TUTORIAL_LINE_GAP = 3;
     private static final float[] CIRCLE_X = new float[49];
     private static final float[] CIRCLE_Y = new float[49];
 
@@ -163,7 +168,8 @@ public final class BreathingCanvas extends BaseUIComponent {
         }
         shownAir += (view.getAirLiters() - shownAir) * (1 - Math.exp(-seconds * 14));
         double airRatio = view.getCapacityLiters() > 0 ? shownAir / view.getCapacityLiters() : 0;
-        context.fill(x, y, x + width, y + height, BACKGROUND);
+        context.fill(x, y, x + width, y + height,
+                MeridianTheme.color(dev.kizuna.inventoryui.theme.ThemeTokens.PREVIEW_BACKGROUND));
         if (width > 0 && height > 0) {
             if (renderer == null) {
                 renderer = new BodySceneRenderer();
@@ -320,33 +326,39 @@ public final class BreathingCanvas extends BaseUIComponent {
     }
 
     private void drawText(OwoUIGraphics context) {
-        // 文字在场景纹理之后绘制，模型和底座不占用前景图层。
+        // 当前输入模式放在左下角，不与开始按钮争用中心位置。
         var font = Minecraft.getInstance().font;
-        String hint = view.getActive() ? "左吸 · 右呼 · 中键旋转 · 滚轮缩放" : "中键旋转 · 滚轮缩放";
-        if (view.getActive() && view.getAutomatic()) {
-            // 自动模式由服务端吸呼，提示里不再要求玩家按左右键。
+        String hint;
+        if (!view.getActive()) {
+            hint = "中键旋转 · 滚轮缩放";
+        } else if (view.getAutomatic()) {
             hint = "自动吸呼中 · 中键旋转 · 滚轮缩放";
+        } else {
+            hint = "左吸 · 右呼 · 中键旋转 · 滚轮缩放";
         }
-        hint = font.plainSubstrByWidth(hint, Math.max(0, width - 24));
-        context.text(font, hint, x + (width - font.width(hint)) / 2, y + height - 18, 0xFF81928F, false);
+        String caption = font.plainSubstrByWidth(hint, Math.max(0, width - TEXT_PADDING * 2));
+        context.text(font, caption, x + TEXT_PADDING, y + height - HINT_BOTTOM,
+                MeridianTheme.color(dev.kizuna.inventoryui.theme.ThemeTokens.MUTED_TEXT), false /* shadow */);
     }
 
     private void drawTutorial(OwoUIGraphics context) {
-        // 教学随场景宽度换行，紧凑窗口精简措辞，底部仍留出开始按钮的位置。
-        context.fill(x, y, x + width, y + height, 0xB0000000);
+        // 三条操作说明沿左侧排布，不遮暗整幅模型；窄窗口按实际宽度折行。
         var font = Minecraft.getInstance().font;
-        int textWidth = Math.max(1, Math.min(286, width - 40));
-        String instructions = "左键吸气，右键呼气，松开停气。\n气流带动全场灵气，近处更强且有惯性。\n中键旋转，滚轮缩放。\n肺满需呼气，留意耐力与精力。";
+        int textWidth = Math.max(1, Math.min(TUTORIAL_WIDTH, width - (TEXT_PADDING + TUTORIAL_PADDING) * 2));
+        String instructions = "左键吸气，右键呼气，松开停气。\n"
+                + "中键旋转、滚轮缩放；近处灵气受气流影响更强。\n"
+                + "肺满时先呼气，留意耐力与精力。";
         var lines = font.split(Component.literal(instructions), textWidth);
-        int lineHeight = font.lineHeight + 2;
-        int textHeight = font.lineHeight + 6 + lines.size() * lineHeight;
-        int left = x + (width - textWidth) / 2;
-        int top = y + Math.max(8, (height - 54 - textHeight) / 2);
-        context.fill(left - 8, top - 6, left + textWidth + 8, top + textHeight + 6, 0xF0101D21);
-        context.fill(left - 8, top - 6, left - 6, top + textHeight + 6, 0xFFA3D7C9);
-        context.text(font, "第一次吐纳 · 手动引导气息", left, top, 0xFFE5DEC9, false);
+        int lineHeight = font.lineHeight + TUTORIAL_LINE_GAP;
+        int left = x + TEXT_PADDING;
+        int top = y + TUTORIAL_TOP;
+        var bounds = new MeridianTheme.Bounds(left, top, textWidth + TUTORIAL_PADDING * 2,
+                lines.size() * lineHeight + TUTORIAL_PADDING * 2);
+        MeridianTheme.panel(context, bounds);
+        int textColor = MeridianTheme.color(dev.kizuna.inventoryui.theme.ThemeTokens.TEXT);
         for (int index = 0; index < lines.size(); index++) {
-            context.text(font, lines.get(index), left, top + font.lineHeight + 6 + index * lineHeight, 0xFFACBFBC, false);
+            context.text(font, lines.get(index), left + TUTORIAL_PADDING,
+                    top + TUTORIAL_PADDING + index * lineHeight, textColor, false /* shadow */);
         }
     }
 
@@ -523,13 +535,18 @@ public final class BreathingCanvas extends BaseUIComponent {
 
     @Override
     public void onFocusLost() {
-        // 切换控件暂停输入，留存粒子速度仍由权威事件推进。
+        // 组件切换与窗口切换共用释放语义，避免吸呼方向停留在旧控件。
+        releaseInput();
+        super.onFocusLost();
+    }
+
+    public void releaseInput() {
+        // 手动输入归零后保留练习会话，自动活动始终由权威服务器推进。
         held = HOLD;
         rotating = false;
         audio.stop();
-        if (view.getActive()) {
+        if (view.getActive() && !view.getAutomatic()) {
             send(HOLD);
         }
-        super.onFocusLost();
     }
 }

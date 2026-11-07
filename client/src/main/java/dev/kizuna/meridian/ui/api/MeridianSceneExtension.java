@@ -11,6 +11,7 @@ public interface MeridianSceneExtension {
     String title();
     String lockedReason();
     String bodySummary(BodySnapshot body);
+    java.util.List<MeridianAction> actions(BodySnapshot body);
     Session create(BodyScene scene, BodyCanvas canvas);
 
     static MeridianSceneExtension required() {
@@ -24,9 +25,12 @@ public interface MeridianSceneExtension {
     }
 
     interface Session {
+        /** 完整练习场景，包含 create 传入的画布；空白区域应保留模型交互。 */
         UIComponent component();
         void update(BodySnapshot body);
         boolean keyPress(int key, int modifiers);
+        void keyRelease(int key);
+        void cancelInput();
         void close();
     }
 }

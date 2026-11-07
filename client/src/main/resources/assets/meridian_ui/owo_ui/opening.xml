@@ -5,7 +5,7 @@
             <flow-layout direction="vertical">
                 <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
                 <children>
-                    <label id="title"><text>经脉 · 内观</text><color>#FFE8D9AD</color></label>
+                    <label id="title"><text>经脉</text></label>
                     <flow-layout id="info" direction="vertical"/>
                     <flow-layout id="scene" direction="vertical">
                         <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>

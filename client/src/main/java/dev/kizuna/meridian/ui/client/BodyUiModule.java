@@ -11,6 +11,7 @@ import dev.kizuna.meridian.progression.client.ClientProgression;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
 import dev.kizuna.meridian.protocol.pb.GatheringMessages.*;
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathControl;
+import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathAction;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.BodyViewUpdate;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.BodyViewRequest;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.MeridianOpeningRule;
@@ -82,9 +83,8 @@ public final class BodyUiModule implements ClientModule {
     @Override
     public void register(ClientBindings bindings) {
         // 同一生成消息同时支持本地宿主和已协商的网络路由，客户端不依赖权威实现。
-        for (String feature : List.of("meridian_ui:meridians", "meridian_ui:meridian_operation")) {
-            bindings.featureAccess(feature, ClientProgression::canCultivate);
-        }
+        bindings.featureAccess("meridian_ui:meridians", ClientProgression::canCultivate);
+        bindings.featureAccess("meridian_ui:meridian_operation", meridians::canOpenOperation);
         // 菜单与直接打开共用各自残卷权限；具体练习门槛由必装生物扩展解释。
         bindings.featureAccess("meridian_ui:cultivation", ClientProgression::canGather);
         bindings.featureAccess("meridian_ui:practice", () -> ClientProgression.canCultivate()
@@ -366,16 +366,30 @@ public final class BodyUiModule implements ClientModule {
     }
 
     private void controlBreathing(BreathControl control) {
-        // 背压只保留最新方向；停止意图不会因为上一份回执尚未到达而丢失。
+        // 停止意图优先于旧快照产生的方向续期，关窗后立即重开也不能遗留旧会话。
         if (!ClientProgression.canGather()
                 || body == null || gatheringSender == null) {
+            return;
+        }
+        if (queuedBreath != null && queuedBreath.getAction() == BreathAction.END_BREATHING
+                && continuesBreathing(control.getAction())) {
             return;
         }
         queuedBreath = control;
         if (pendingRequest.isEmpty()) {
             queuedBreath = null;
-            sendGathering(GatheringRequest.newBuilder().setBreath(control.toBuilder().setSequence(++breathSequence)));
+            var sequenced = control.toBuilder()
+                    .setSequence(++breathSequence)
+                    .build();
+            var request = GatheringRequest.newBuilder()
+                    .setBreath(sequenced);
+            sendGathering(request);
         }
+    }
+
+    private static boolean continuesBreathing(BreathAction action) {
+        // 方向和心跳可合并，明确开始或结束必须保留自身语义。
+        return action == BreathAction.INHALE || action == BreathAction.EXHALE || action == BreathAction.HOLD;
     }
 
     private void sendGathering(GatheringRequest.Builder request) {
@@ -383,7 +397,11 @@ public final class BodyUiModule implements ClientModule {
         pendingRequest = UUID.randomUUID().toString();
         gatheringError = "";
         showGathering();
-        gatheringSender.accept(request.setProtocolVersion(1).setRequestId(pendingRequest).setBodyId(body.getId()).build());
+        var message = request.setProtocolVersion(1)
+                .setRequestId(pendingRequest)
+                .setBodyId(body.getId())
+                .build();
+        gatheringSender.accept(message);
     }
 
     public void receiveGathering(GatheringResponse response) {
