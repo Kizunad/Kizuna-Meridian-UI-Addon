@@ -233,6 +233,13 @@ final class BreathingMeters {
             String caption = String.format(Locale.ROOT, "纳入 %.2f 真元", breath.getStoredQi());
             context.text(font, font.plainSubstrByWidth(caption, width), x, y + QI_CAPTION_TOP,
                     MeridianTheme.color(ThemeTokens.TEXT), false /* shadow */);
+            // 药效改了肺的摄入时，紧贴在纳入量下面写倍率：变强用进度条的颜色，变弱用错误色。
+            IntakeCaption.of(breath).ifPresent(intake -> {
+                String token = intake.boosted() ? ThemeTokens.PROGRESS_FILL : ThemeTokens.INPUT_ERROR;
+                int intakeTop = y + QI_CAPTION_TOP + font.lineHeight;
+                context.text(font, font.plainSubstrByWidth(intake.text(), width), x, intakeTop,
+                        MeridianTheme.color(token), false /* shadow */);
+            });
         }
     }
 }
