@@ -27,6 +27,8 @@ final class BreathingMeters {
     private static final int LUNGS_SIZE = 64;
     private static final int AIR_CAPTION_TOP = 73;
     private static final int QI_CAPTION_TOP = 8;
+    /** 纳入量、相态明细、摄入倍率三行的高度。 */
+    private static final int QI_SUMMARY_HEIGHT = 35;
     private static final int PERCENT = 100;
     private static final int RESERVE_TOP = 16;
     private static final int RESERVE_HEIGHT = 4;
@@ -69,7 +71,7 @@ final class BreathingMeters {
         boolean compact = width < COMPACT_WIDTH;
         air.sizing(Sizing.fixed(compact ? 72 : 80), Sizing.fixed(84));
         air.margins(Insets.of(0, FOOTER_CLEARANCE, compact ? 6 : 12, 0));
-        qi.sizing(Sizing.fixed(compact ? 128 : 136), Sizing.fixed(26));
+        qi.sizing(Sizing.fixed(compact ? 128 : 136), Sizing.fixed(QI_SUMMARY_HEIGHT));
         qi.margins(Insets.of(0, compact ? 88 : FOOTER_CLEARANCE, 0, compact ? 6 : 12));
         action.sizing(Sizing.fixed(compact ? 104 : 120), Sizing.fixed(compact ? 26 : 30));
         reserve.horizontalSizing(Sizing.fill(compact ? 78 : 64));
@@ -222,7 +224,7 @@ final class BreathingMeters {
     private final class QiSummary extends BaseUIComponent {
         QiSummary() {
             // 整个统计区域都能命中总账提示。
-            sizing(Sizing.fixed(136), Sizing.fixed(26));
+            sizing(Sizing.fixed(136), Sizing.fixed(QI_SUMMARY_HEIGHT));
             id("breathing-qi");
         }
 
@@ -233,10 +235,18 @@ final class BreathingMeters {
             String caption = String.format(Locale.ROOT, "纳入 %.2f 真元", breath.getStoredQi());
             context.text(font, font.plainSubstrByWidth(caption, width), x, y + QI_CAPTION_TOP,
                     MeridianTheme.color(ThemeTokens.TEXT), false /* shadow */);
-            // 药效改了肺的摄入时，紧贴在纳入量下面写倍率：变强用进度条的颜色，变弱用错误色。
+            // 真炁吐纳有气态时，紧贴在纳入量下面分开写游离、气态各纳入多少。
+            int nextLine = y + QI_CAPTION_TOP + font.lineHeight;
+            var phases = StoredPhaseCaption.of(breath);
+            if (phases.isPresent()) {
+                context.text(font, font.plainSubstrByWidth(phases.get(), width), x, nextLine,
+                        MeridianTheme.color(ThemeTokens.MUTED_TEXT), false /* shadow */);
+                nextLine += font.lineHeight;
+            }
+            // 药效改了肺的摄入时，再下一行写倍率：变强用进度条的颜色，变弱用错误色。
+            int intakeTop = nextLine;
             IntakeCaption.of(breath).ifPresent(intake -> {
                 String token = intake.boosted() ? ThemeTokens.PROGRESS_FILL : ThemeTokens.INPUT_ERROR;
-                int intakeTop = y + QI_CAPTION_TOP + font.lineHeight;
                 context.text(font, font.plainSubstrByWidth(intake.text(), width), x, intakeTop,
                         MeridianTheme.color(token), false /* shadow */);
             });
