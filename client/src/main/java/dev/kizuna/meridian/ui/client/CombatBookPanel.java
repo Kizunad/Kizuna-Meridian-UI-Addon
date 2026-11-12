@@ -119,7 +119,7 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
     private static KnownTechnique libraryEntry(KnownTechnique entry) {
         // 冷却与可用原因不影响左页分组、标题或图标，避免周期推送重建来源组件。
         return entry.toBuilder()
-                .clearCooldownRemainingMillis()
+                .clearCooldownEndTick()
                 .clearCooldownTotalMillis()
                 .clearUnavailableReason()
                 .build();
@@ -223,11 +223,11 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
     }
 
     private void updateDetail() {
-        // 剩余冷却随时间变化不重建长文，内容与可用原因变化时才替换说明。
+        // 冷却结束时刻变化不重建长文，内容与可用原因变化时才替换说明。
         var entry = known.get(selection.selected());
         KnownTechnique normalized = null;
         if (entry != null) {
-            normalized = entry.toBuilder().clearCooldownRemainingMillis().build();
+            normalized = entry.toBuilder().clearCooldownEndTick().build();
         }
         if (!java.util.Objects.equals(displayedDetail, normalized)) {
             displayedDetail = normalized;
