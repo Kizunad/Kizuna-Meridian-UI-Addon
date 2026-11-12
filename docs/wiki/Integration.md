@@ -78,7 +78,7 @@ Human Addon 由宿主装配人体内容，客户端通过必需的 Human-UI 与 
 
 ## 游戏内验收
 
-真实玩家由 Human 的 `fabric/` 宿主推送 `presentation.proto` 的 `BodyViewUpdate`。客户端在 `meridian:body_view` 接收有界 Protobuf，断线清理、拒绝跨连接迟到消息与倒退版本；此入口仅作展示。Human 适配目前提供行走/疾跑身体与疲劳数值，`I` → 检视 → 勾选肌肉可查看实际占用和恢复半衰期；默认只显示使用玩家基础皮肤的体表。精确当前可用力量/耐力使用宿主 `/meridian tissue <id>` 查询。UI 本身没有 Human 编译依赖。
+真实玩家由 Human 的 `fabric/` 宿主推送 `presentation.proto` 的 `BodyViewUpdate`。客户端在 `meridian:body_view` 接收有界 Protobuf，断线清理、拒绝跨连接迟到消息与倒退版本；此入口仅作展示。宿主在构型没变时省略 `structure` 并置 `structure_omitted`，客户端接回本连接最近收到的构型，手里没有就按坏包丢弃，断线时清掉。Human 适配目前提供行走/疾跑身体与疲劳数值，`I` → 检视 → 勾选肌肉可查看实际占用和恢复半衰期；默认只显示使用玩家基础皮肤的体表。精确当前可用力量/耐力使用宿主 `/meridian tissue <id>` 查询。UI 本身没有 Human 编译依赖。
 
 这一路径依赖当前含 `BodyViewUpdate` 的框架源码。Human Fabric 宿主同时提供真实吐纳通道，UI 自动绑定并沿用原三维界面，详见[吐纳接入](Gathering.md)。盘坐预览须装入含 `meditate` 资源的 Player Animations。
 

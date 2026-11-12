@@ -82,6 +82,7 @@
 
 - `BodyViewUpdate.opening` 提供可选规则：存在即替换，空表撤销，省略保留。
 - `BodyViewUpdate.operations` 携带内容附属生成的同版本卡片；Java 宿主也可调用 `updateMeridianOperations`。仅绑定规则不会自动生成开脉条件卡。
+- 规则和卡片只随内观视图下发。经脉窗或操作窗开着、进度允许内观时，客户端发 `BodyViewRequest(introspection=true)`；两个窗都关上就发 `introspection=false` 退订。宿主撤权时丢掉订阅，换维度、重生时保留；客户端每次收到进度同步都按窗口现状重发一次，恢复权限后由此重新订上。当前显示的不是宿主交付的身体（如本地 `present` 的展示样例）时不发订阅请求。刚开窗到首份内观视图之间约一个往返，「开脉」入口在卡片到达后出现。
 - Fabric 通道为 `meridian:opening_request/response`；请求为 `MeridianOpeningRequest`，响应为框架 `ResponseEnvelope`，后续身体推送提供事实。
 - Java 宿主使用 `bindOpening(rules, sender)`、`receiveOpening(response)` 与 `present/update`。
 - Inventory 公共路由为 `meridian_ui:opening_request/response`。`GatheringBridge(connection, gatheringSession, openingSession)` 同时提供吐纳与开脉，旧两参数构造仍只提供吐纳。

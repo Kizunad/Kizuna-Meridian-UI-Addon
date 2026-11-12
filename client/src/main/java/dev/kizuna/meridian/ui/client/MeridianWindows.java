@@ -53,9 +53,11 @@ final class MeridianWindows {
     private long pendingRevision;
     private int revisionRetries;
     private boolean awaitingOperationRefresh;
+    private final Runnable introspectionWindowsChanged;
 
-    MeridianWindows() {
-        // 内置开脉和外部功法走同一个目录，避免维护两套窗口行为。
+    MeridianWindows(Runnable introspectionWindowsChanged) {
+        // 内置开脉和外部功法走同一个目录，避免维护两套窗口行为；经脉窗、操作窗开关时通知模块调整内观订阅。
+        this.introspectionWindowsChanged = introspectionWindowsChanged;
         registerOpening();
     }
 
@@ -167,7 +169,9 @@ final class MeridianWindows {
                     panelKey = null;
                     closeDetails();
                 }
+                introspectionWindowsChanged.run();
             });
+            introspectionWindowsChanged.run();
             return panel.root();
         });
         bindings.window("meridian_ui:meridian_operation_window", (owner, window) -> {
@@ -187,7 +191,9 @@ final class MeridianWindows {
                     operationKey = null;
                     awaitingOperationRefresh = false;
                 }
+                introspectionWindowsChanged.run();
             });
+            introspectionWindowsChanged.run();
             show();
             return opened.root();
         });
@@ -554,6 +560,11 @@ final class MeridianWindows {
     boolean open() {
         // 身体替换前需要检查所有经脉窗口。
         return panel != null || operation != null || practice != null;
+    }
+
+    boolean needsIntrospection() {
+        // 开脉规则和操作卡只有经脉窗和操作窗用得上，练习窗只读身体。
+        return panel != null || operation != null;
     }
 
     MeridianPanel panel() {

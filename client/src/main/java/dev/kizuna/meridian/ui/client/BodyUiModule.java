@@ -9,6 +9,7 @@ import dev.kizuna.inventoryui.window.UiWindowManager.WindowKey;
 import dev.kizuna.inventoryui.window.UiWindowManager.WindowState;
 import dev.kizuna.meridian.progression.client.ClientProgression;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
+import dev.kizuna.meridian.protocol.pb.BodyMessages.BodyStructure;
 import dev.kizuna.meridian.protocol.pb.GatheringMessages.*;
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathControl;
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathAction;
@@ -44,6 +45,12 @@ public final class BodyUiModule implements ClientModule {
     private boolean cultivationLocked;
     private BodyScene scene;
     private BodySnapshot body;
+    /** 这条连接上最近收到的构型；宿主省略构型时接回这一份。 */
+    private BodyStructure structure;
+    /** 最近一次向宿主要的是不是内观视图。 */
+    private boolean introspectionRequested;
+    /** Fabric 宿主经身体视图通道交付的身体 ID；内观只替这具身体要，本地展示的身体不订阅。 */
+    private String hostBodyId = "";
     private BodyPanel panel;
     private CultivationPanel cultivationPanel;
     private GatheringView gathering;
@@ -52,7 +59,7 @@ public final class BodyUiModule implements ClientModule {
     private String gatheringError = "";
     private long breathSequence;
     private BreathControl queuedBreath;
-    private final MeridianWindows meridians = new MeridianWindows();
+    private final MeridianWindows meridians = new MeridianWindows(this::syncIntrospection);
 
     @Override
     public FrameworkCatalog.Module definition() {
@@ -206,7 +213,8 @@ public final class BodyUiModule implements ClientModule {
                 }
                 return;
             }
-            if (update.getProtocolVersion() != 1 || !update.hasBody() || update.getBody().getId().isBlank()) {
+            BodySnapshot snapshot = withStructure(update);
+            if (update.getProtocolVersion() != 1 || snapshot.getId().isBlank()) {
                 throw UiErrors.invalid(UiErrors.INVALID_UPDATE);
             }
             Identifier resource = Identifier.tryParse(update.getPresentationResource());
@@ -214,12 +222,12 @@ public final class BodyUiModule implements ClientModule {
                 throw UiErrors.invalid(UiErrors.INVALID_UPDATE);
             }
             if (body == null) {
-                present(update.getBody(), resource);
+                present(snapshot, resource);
+                hostBodyId = snapshot.getId();
                 bindFabricGathering();
-                subscribeIntrospection();
-            } else if (body.getId().equals(update.getBody().getId())
-                    && update.getBody().getRevision() >= body.getRevision()) {
-                update(update.getBody());
+            } else if (body.getId().equals(snapshot.getId())
+                    && snapshot.getRevision() >= body.getRevision()) {
+                update(snapshot);
             } else {
                 // 被拒绝的身体快照也不能替换当前身体的操作规则。
                 return;
@@ -235,6 +243,21 @@ public final class BodyUiModule implements ClientModule {
             // 异常包保留旧展示并记录原因，避免损坏模型资源让客户端退出游戏。
             org.slf4j.LoggerFactory.getLogger("meridian_ui").warn(UiErrors.INVALID_UPDATE, failure);
         }
+    }
+
+    private BodySnapshot withStructure(BodyViewUpdate update) {
+        // 宿主发出带构型的身体后，下一份就可能省略：所以带了就换下手里那份，不论这份身体是否采用；
+        // 省略时接回手里那份，手里没有就是坏包。
+        if (!update.getStructureOmitted()) {
+            structure = update.getBody().getStructure();
+            return update.getBody();
+        }
+        if (structure == null) {
+            throw UiErrors.invalid(UiErrors.INVALID_UPDATE);
+        }
+        return update.getBody().toBuilder()
+                .setStructure(structure)
+                .build();
     }
 
     public void present(BodySnapshot snapshot, Identifier resource) {
@@ -423,17 +446,37 @@ public final class BodyUiModule implements ClientModule {
                     == dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode.ACCESS_DENIED) {
                 gathering = null;
             }
-        } else if (response.hasView() && response.getView().getBody().getId().equals(body.getId())
-                && response.getView().getBody().getRevision() >= body.getRevision()
-                && (gathering == null || response.getView().getBreathing().getSequence() >= gathering.getBreathing().getSequence())) {
-            gathering = response.getView();
-            breathSequence = Math.max(breathSequence, gathering.getBreathing().getSequence());
-            update(gathering.getBody());
+        } else if (response.hasView() && newerGathering(response.getView())) {
+            GatheringView view = response.getView();
+            breathSequence = Math.max(breathSequence, view.getBreathing().getSequence());
+            if (view.hasBody()) {
+                gathering = view;
+                update(view.getBody());
+            } else {
+                // Fabric 宿主的回执不带身体，身体走身体视图通道，这里接上手里最新的那份。
+                gathering = view.toBuilder()
+                        .setBody(body)
+                        .build();
+            }
         }
         showGathering();
         if (pendingRequest.isEmpty() && queuedBreath != null) {
             controlBreathing(queuedBreath);
         }
+    }
+
+    private boolean newerGathering(GatheringView view) {
+        // 带身体的回执要对上当前身体且版本不旧；不带身体的回执来自 Fabric 宿主，当前显示的得是宿主交付的身体。
+        // 吐纳序号也不能倒退。
+        boolean bodyFits;
+        if (view.hasBody()) {
+            bodyFits = view.getBody().getId().equals(body.getId())
+                    && view.getBody().getRevision() >= body.getRevision();
+        } else {
+            bodyFits = body.getId().equals(hostBodyId);
+        }
+        return bodyFits && (gathering == null
+                || view.getBreathing().getSequence() >= gathering.getBreathing().getSequence());
     }
 
     private void showGathering() {
@@ -464,7 +507,8 @@ public final class BodyUiModule implements ClientModule {
             runtime.workspace().windows().close(cultivationKey);
         }
         meridians.progressChanged();
-        subscribeIntrospection();
+        // 撤权时宿主会丢掉内观订阅再重发进度，所以每次进度到达都按窗口现状重新要一次，恢复权限时就重新订上。
+        requestIntrospection();
         refreshGathering();
     }
 
@@ -482,22 +526,37 @@ public final class BodyUiModule implements ClientModule {
         }
     }
 
-    private void subscribeIntrospection() {
-        // 真实服务端单独授权内部视图；未同步不冒充未读发起请求。
-        if (body == null || Minecraft.getInstance().getConnection() == null
+    private boolean wantsIntrospection() {
+        // 内观视图带开脉规则和操作卡，只在经脉窗或操作窗开着、进度也允许内观时要。
+        return meridians.needsIntrospection() && ClientProgression.canInspect();
+    }
+
+    private void syncIntrospection() {
+        // 经脉窗、操作窗开关后，要的和上次不一样才发请求：开窗订阅，都关了就退订。
+        if (wantsIntrospection() != introspectionRequested) {
+            requestIntrospection();
+        }
+    }
+
+    private void requestIntrospection() {
+        // 按窗口现状订阅或退订；真实服务端单独授权内部视图，未同步不冒充未读发起请求。
+        // 正在显示的不是宿主交付的身体（比如本地展示样例）时不发：宿主会拒绝，拒绝又会撤下经脉窗。
+        if (body == null || !body.getId().equals(hostBodyId) || Minecraft.getInstance().getConnection() == null
                 || !ClientProgression.synchronizedWithServer()) {
             return;
         }
         if (!ClientPlayNetworking.canSend(MeridianChannels.BODY_VIEW_REQUEST.type())) {
             throw new IllegalStateException(UiErrors.REQUIRED_HOST_CHANNEL + MeridianChannels.BODY_VIEW_REQUEST.type().id());
         }
+        boolean introspection = wantsIntrospection();
         var request = BodyViewRequest.newBuilder()
                 .setProtocolVersion(1)
                 .setRequestId(UUID.randomUUID().toString())
                 .setBodyId(body.getId())
-                .setIntrospection(ClientProgression.canInspect())
+                .setIntrospection(introspection)
                 .build();
         ClientPlayNetworking.send(MeridianChannels.BODY_VIEW_REQUEST.payload(request.toByteArray()));
+        introspectionRequested = introspection;
     }
 
     private void bindFabricGathering() {
@@ -519,9 +578,13 @@ public final class BodyUiModule implements ClientModule {
 
     private void clearBody() {
         // 未建立 Inventory UI 握手的连接也必须在 Fabric 断线时清除只读投影。
+        // 订阅和构型随连接作废；先清掉身体再关窗，关窗回调见没有身体就不往断开的连接发订阅请求。
+        introspectionRequested = false;
+        hostBodyId = "";
+        structure = null;
+        body = null;
         meridians.clear();
         OpeningOverlay.clear();
-        body = null;
         scene = null;
         panel = null;
         bodyKey = null;
