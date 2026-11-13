@@ -13,10 +13,24 @@ final class MeridianInfo extends BaseUIComponent {
     private static final int RADIUS = 7;
     private static final int INNER_RADIUS = 6;
 
-    MeridianInfo() {
+    static final String KEYS = "F：镜头对准选中的经脉\nG：凝聚真元 / 暂停";
+
+    MeridianInfo(String guide) {
         // 自绘圆环避免依赖字体是否包含圆形 i，也保持与场景控件一致的外观。
         sizing(Sizing.fixed(SIZE), Sizing.fixed(SIZE));
-        tooltip(Component.literal("F - Focus\nG - 凝聚真元 / 暂停\n" + DataText.get("help")));
+        tooltip(tooltipLines(guide, DataText.get("help")));
+    }
+
+    static java.util.List<Component> tooltipLines(String guide, String dataHelp) {
+        // 生物附属给的开脉流程在前，快捷键居中，数据页的说明在后；一行文字一行提示。
+        var lines = new java.util.ArrayList<Component>();
+        if (!guide.isBlank()) {
+            guide.lines().forEach(line -> lines.add(Component.literal(line)));
+            lines.add(Component.empty());
+        }
+        KEYS.lines().forEach(line -> lines.add(Component.literal(line)));
+        dataHelp.lines().forEach(line -> lines.add(Component.literal(line)));
+        return java.util.List.copyOf(lines);
     }
 
     @Override

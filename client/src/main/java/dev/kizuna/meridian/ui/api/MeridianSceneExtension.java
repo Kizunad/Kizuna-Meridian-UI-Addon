@@ -11,6 +11,16 @@ public interface MeridianSceneExtension {
     String title();
     String lockedReason();
     String bodySummary(BodySnapshot body);
+
+    /** 检视窗口顶上的摘要，一项一行，可以带悬浮说明；不实现时就是 bodySummary 那一行。 */
+    default java.util.List<net.minecraft.network.chat.Component> bodySummaryLines(BodySnapshot body) {
+        return java.util.List.of(net.minecraft.network.chat.Component.literal(bodySummary(body)));
+    }
+    /** 经脉窗口「i」里的开脉流程说明，多行文字；不提供时只显示快捷键。 */
+    default String meridianGuide() {
+        return "";
+    }
+
     java.util.List<MeridianAction> actions(BodySnapshot body);
     Session create(BodyScene scene, BodyCanvas canvas);
 

@@ -161,6 +161,33 @@ public class BodyPresentationTest {
     }
 
     @Test
+    public void zeroHpPartSaysWhatStoppedAndHowItComesBackAndFieldsCarryHoverText() {
+        // 归零的部位写明失能和出路，没归零的不写；数值行各带一句悬浮说明，文字本身不变。
+        BodySnapshot body = BodySnapshot.newBuilder().setStructure(BodyStructure.newBuilder()
+                        .addParts(PartDefinition.newBuilder().setId("limb").setDisplayName("触肢").setMaxHp(10))
+                        .addTissues(TissueDefinition.newBuilder().setId("tendril").setDisplayName("卷须")))
+                .addPartStates(PartState.newBuilder().setId("limb").setHp(0))
+                .build();
+        BodyVisual part = BodyVisual.newBuilder().setTargetKind(BodyTargetKind.PART).setTargetId("limb").build();
+        List<String> disabled = BodyInformation.lines(body, part);
+        assertTrue(disabled.contains("HP：0.00 / 10.00"));
+        assertTrue(disabled.contains(BodyInformation.PART_DISABLED));
+        assertTrue(disabled.contains(BodyInformation.PART_DISABLED_WAY_OUT));
+        assertTrue(BodyInformation.PART_DISABLED_WAY_OUT.contains("不死图腾")
+                && BodyInformation.PART_DISABLED_WAY_OUT.contains("重生"));
+        BodySnapshot hurt = body.toBuilder().setPartStates(0, PartState.newBuilder().setId("limb").setHp(4)).build();
+        assertFalse(BodyInformation.lines(hurt, part).contains(BodyInformation.PART_DISABLED));
+
+        BodyVisual tissue = BodyVisual.newBuilder().setTargetKind(BodyTargetKind.TISSUE).setTargetId("tendril").build();
+        var strength = BodyInformation.describe(body, tissue).stream()
+                .filter(line -> line.getString().startsWith("基础力量：")).findFirst().orElseThrow();
+        var hover = (net.minecraft.network.chat.HoverEvent.ShowText) strength.getStyle().getHoverEvent();
+        assertTrue(hover.value().getString().contains("近战"));
+        assertEquals(BodyInformation.lines(body, tissue),
+                BodyInformation.describe(body, tissue).stream().map(line -> line.getString()).toList());
+    }
+
+    @Test
     public void arbitraryCreatureUsesTheSameResourceAndStateBinding() {
         // 用非人体模板和器官身份走公开契约，状态展示不依赖 Human JAR。
         BodyScene scene = new BodyScene(presentation().toByteArray());

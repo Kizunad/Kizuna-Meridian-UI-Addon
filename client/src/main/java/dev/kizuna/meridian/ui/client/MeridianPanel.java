@@ -85,7 +85,8 @@ public final class MeridianPanel {
                     () -> show(Tab.SCENE)));
             tabs.child(new MeridianTab("meridian-tab-data", () -> DataText.get("tab.data"), () -> tab == Tab.DATA,
                     () -> show(Tab.DATA)));
-            content.childById(FlowLayout.class, "info").child(new MeridianInfo());
+            content.childById(FlowLayout.class, "info").child(new MeridianInfo(
+                    dev.kizuna.meridian.ui.api.MeridianSceneExtension.required().meridianGuide()));
             scenePane.child(canvas);
             content.child(actions);
         }

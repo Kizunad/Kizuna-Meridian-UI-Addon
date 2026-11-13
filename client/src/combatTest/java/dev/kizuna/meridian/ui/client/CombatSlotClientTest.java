@@ -10,6 +10,7 @@ import dev.kizuna.meridian.combat.fabric.CombatChannels;
 import dev.kizuna.meridian.combat.fabric.client.CombatSlotAccess;
 import dev.kizuna.meridian.combat.protocol.pb.CombatMessages.KnownTechniques;
 import dev.kizuna.meridian.technique.fabric.TechniqueFabric;
+import io.wispforest.owo.ui.component.LabelComponent;
 import io.wispforest.owo.ui.component.UIComponents;
 import io.wispforest.owo.ui.container.ScrollContainer;
 import io.wispforest.owo.ui.core.Positioning;
@@ -19,6 +20,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.network.chat.contents.KeybindContents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import net.minecraft.client.gui.components.toasts.SystemToast;
@@ -176,7 +178,19 @@ public final class CombatSlotClientTest implements ClientModInitializer {
         click(technique(FIRST));
         checkState(panel.selected().equals(FIRST), "点击没有选中功法");
         checkState(CombatSlotAccess.snapshot().slots().stream().allMatch(String::isEmpty), "点击立即写槽");
+        verifyDetail();
         next(Stage.DRAG);
+    }
+
+    private void verifyDetail() {
+        // 右页写出这一式的数值、持物和境界；底部常驻一行讲怎么进架势、怎么放，键名取玩家的绑定。
+        String lines = panel.childById(LabelComponent.class, "combat-detail-lines").text().getString();
+        checkState(lines.contains("真元：") && lines.contains("冷却：") && lines.contains("施放："), "详情页缺数值：" + lines);
+        checkState(lines.contains("持物：不需要") && lines.contains("境界："), "详情页缺持物或境界：" + lines);
+        var hint = panel.childById(LabelComponent.class, "stance-hint").text();
+        checkState(hint.getString().contains("进入战斗架势"), "底部没有架势键那一行");
+        checkState(hint.getSiblings().stream().anyMatch(part -> part.getContents() instanceof KeybindContents),
+                "架势键没有按玩家的绑定显示");
     }
 
     private void dragSlots() {

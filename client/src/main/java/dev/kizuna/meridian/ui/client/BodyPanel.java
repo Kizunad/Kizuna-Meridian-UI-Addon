@@ -170,14 +170,26 @@ public final class BodyPanel {
 
     private void showInformation() {
         // 普通状态更新只替换文字，让玩家已调整的镜头与选择保持稳定。
-        String summary = extension.bodySummary(body) + "\n\n";
+        var text = net.minecraft.network.chat.Component.empty();
+        for (var line : extension.bodySummaryLines(body)) {
+            text.append(line).append("\n");
+        }
+        text.append("\n");
         if (selected == null) {
             String instructions = "检视\n\n点击体表查看部位介绍、血量与状态。\n\n可切换渲染层查看内部。\n"
-                    + "外层会自然遮挡内部，取消勾选即可逐层查看。";
-            information.text(net.minecraft.network.chat.Component.literal(summary + instructions));
+                    + "外层会自然遮挡内部，取消勾选即可逐层查看。\n\n鼠标停在一行数值上，可以看这一项管什么。";
+            information.text(text.append(instructions));
             return;
         }
-        information.text(net.minecraft.network.chat.Component.literal(summary + String.join("\n", BodyInformation.lines(body, selected))));
+        // 每行各带自己的悬浮说明，拼成一段文字交给同一个标签。
+        var lines = BodyInformation.describe(body, selected);
+        for (int index = 0; index < lines.size(); index++) {
+            text.append(lines.get(index));
+            if (index < lines.size() - 1) {
+                text.append("\n");
+            }
+        }
+        information.text(text);
     }
 
     public void select(BodyVisual node) {

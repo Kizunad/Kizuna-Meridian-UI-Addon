@@ -37,6 +37,9 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
     private static final int SCROLLBAR_SPACE = 6;
     static final SystemToast.SystemToastId CONFIGURATION_ERROR = new SystemToast.SystemToastId();
     private static final long MILLIS_PER_SECOND = 1000;
+    private static final int HINT_HEIGHT = 12;
+    /** 进入战斗架势的按键登记在 Combat 里，这里只引用键名。 */
+    private static final String STANCE_KEY = "key.meridian_combat.stance";
     private final ClientRuntime runtime;
     private final dev.kizuna.inventoryui.window.UiWindowManager.WindowKey windowKey;
     private final FlowLayout content;
@@ -77,12 +80,24 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
         });
         settings.id("stance-settings");
         content.child(settings);
+        content.child(stanceHint());
         detail.gap(GAP * 2);
         library.gap(GAP * 2);
         child(content);
         initializeSlots();
         refresh();
         subscription = CombatSlotAccess.subscribe(this::refresh);
+    }
+
+    private static LabelComponent stanceHint() {
+        // 常驻一行：配好槽位以后怎么放出来。键名按玩家实际绑定显示。
+        var text = Component.literal("按 ").append(Component.keybind(STANCE_KEY))
+                .append(" 进入战斗架势，再按槽位的数字键施放");
+        var hint = UIComponents.label(text);
+        hint.id("stance-hint");
+        hint.shadow(false /* shadow */);
+        hint.color(Color.ofArgb(MeridianTheme.color(ThemeTokens.MUTED_TEXT)));
+        return hint;
     }
 
     private void initializeSlots() {
@@ -122,6 +137,7 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
                 .clearCooldownEndTick()
                 .clearCooldownTotalMillis()
                 .clearUnavailableReason()
+                .clearDetails()
                 .build();
     }
 
@@ -147,7 +163,10 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
         place("detail-scroll", rightX, TITLE_HEIGHT + MARGIN, pageWidth, pageHeight);
         int footerY = height - FOOTER_HEIGHT + GAP;
         place("slots", MARGIN, footerY, width - MARGIN * 2, SLOT_HEIGHT);
-        place("stance-settings", MARGIN, footerY + SLOT_HEIGHT + GAP, width - MARGIN * 2, TITLE_HEIGHT);
+        int hintY = footerY + SLOT_HEIGHT + GAP;
+        MeridianPanel.place(content.childById(UIComponent.class, "stance-hint"), MARGIN, hintY,
+                width - MARGIN * 2, HINT_HEIGHT);
+        place("stance-settings", MARGIN, hintY + HINT_HEIGHT, width - MARGIN * 2, TITLE_HEIGHT);
         int slotWidth = Math.max(1, (width - MARGIN * 2 - GAP * (CombatIds.SLOT_COUNT - 1))
                 / CombatIds.SLOT_COUNT);
         slotTiles.forEach(tile -> tile.horizontalSizing(Sizing.fixed(slotWidth)));
@@ -252,9 +271,17 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
             description = "暂无功法简介";
         }
         detail.child(label(description, paper(ThemeTokens.TEXT)));
-        long cooldown = entry.getCooldownTotalMillis();
-        detail.child(label("冷却：" + (double) cooldown / MILLIS_PER_SECOND + " 秒",
-                paper(ThemeTokens.MUTED_TEXT)));
+        if (entry.getDetailsCount() > 0) {
+            // 明细由服务端按目录和这具身体的绑定结果写好：数值、境界、承接关系、要用的部位，一行一件事。
+            var lines = label(String.join("\n", entry.getDetailsList()), paper(ThemeTokens.MUTED_TEXT));
+            lines.id("combat-detail-lines");
+            detail.child(lines);
+        } else {
+            // 旧服务端不发明细，只有冷却可写。
+            long cooldown = entry.getCooldownTotalMillis();
+            detail.child(label("冷却：" + (double) cooldown / MILLIS_PER_SECOND + " 秒",
+                    paper(ThemeTokens.MUTED_TEXT)));
+        }
         if (!entry.getUnavailableReason().isBlank()) {
             detail.child(label("当前不可用：" + entry.getUnavailableReason(),
                     paper(ThemeTokens.TEXT)));
