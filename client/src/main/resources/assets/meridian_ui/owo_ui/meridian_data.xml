@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<owo-ui>
+    <templates>
+        <meridian-data>
+            <flow-layout direction="vertical">
+                <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+                <children>
+                    <flow-layout id="data-summary" direction="vertical"/>
+                    <flow-layout id="data-elements" direction="vertical"/>
+                    <flow-layout id="data-header" direction="vertical"/>
+                    <scroll id="data-rows-scroll" direction="vertical">
+                        <flow-layout id="data-rows" direction="vertical">
+                            <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
+                            <padding><right>5</right></padding>
+                        </flow-layout>
+                        <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+                    </scroll>
+                </children>
+            </flow-layout>
+        </meridian-data>
+    </templates>
+</owo-ui>

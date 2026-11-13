@@ -94,24 +94,34 @@ public final class BodyInformation {
                     lines.add("外壁：" + number(amount(state.getWallQi())) + " / "
                             + number(QiDensity.displayedCapacity(definition.getWallVolume(), state.getWallQi())) + " 元");
                     lines.add("疲劳：" + number(state.getFatigue()));
-                    lines.add("状态：" + switch (state.getCondition()) {
-                        case INTACT -> "完好";
-                        case LEAKING -> "破漏";
-                        case SEVERED -> "断裂";
-                        default -> "未知";
-                    });
-                    lines.add("开拓：" + switch (state.getOpening().getStage()) {
-                        case UNOPENED -> "未开拓";
-                        case IN_PROGRESS -> "进行中";
-                        case OPENED -> "已开拓";
-                        default -> "未知";
-                    });
+                    lines.add("状态：" + conditionName(state.getCondition()));
+                    lines.add("开拓：" + stageName(state.getOpening().getStage()));
                     lines.add("进度：" + number(state.getOpening().getProgress() * 100) + "%");
                 }
             }
             default -> lines.add(UiErrors.MISSING_TARGET);
         }
         return List.copyOf(lines);
+    }
+
+    static String conditionName(MeridianCondition condition) {
+        // 检视和数据页共用的经脉状态叫法。
+        return switch (condition) {
+            case INTACT -> "完好";
+            case LEAKING -> "破漏";
+            case SEVERED -> "断裂";
+            default -> "未知";
+        };
+    }
+
+    static String stageName(MeridianOpeningStage stage) {
+        // 检视和数据页共用的开拓阶段叫法。
+        return switch (stage) {
+            case UNOPENED -> "未开拓";
+            case IN_PROGRESS -> "进行中";
+            case OPENED -> "已开拓";
+            default -> "未知";
+        };
     }
 
     private static double amount(QiInventory inventory) {

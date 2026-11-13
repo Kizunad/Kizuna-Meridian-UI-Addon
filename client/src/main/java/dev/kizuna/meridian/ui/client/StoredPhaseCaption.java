@@ -26,6 +26,11 @@ final class StoredPhaseCaption {
         // 只从吐纳视图派生一行文字，不保存状态。
     }
 
+    static String name(QiPhase phase) {
+        // 数据页和这一行共用同一套相态叫法。
+        return NAMES.get(phase);
+    }
+
     static Optional<String> of(BreathingView breath) {
         // 按相态合计入脉明细；全是游离态时纳入量本身已经说清，不再多写一行。
         var totals = new EnumMap<QiPhase, Double>(QiPhase.class);

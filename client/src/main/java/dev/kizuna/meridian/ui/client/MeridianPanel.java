@@ -31,6 +31,7 @@ public final class MeridianPanel {
     private static final int INFO_TOP = 4;
     private static final int SCENE_TOP = 30;
     enum Mode { MERIDIANS, PRACTICE }
+    enum Tab { SCENE, DATA }
     private final BodyScene scene;
     private final FlowLayout content;
     private final FlowLayout root;
@@ -38,6 +39,9 @@ public final class MeridianPanel {
     private final Consumer<BodyVisual> selection;
     private final MeridianActionQueue actions = new MeridianActionQueue();
     private final dev.kizuna.meridian.ui.api.MeridianSceneExtension.Session extension;
+    private final FlowLayout scenePane;
+    private final MeridianDataPage data;
+    private Tab tab = Tab.SCENE;
 
     MeridianPanel(BodyScene scene, BodySnapshot body, Consumer<BodyVisual> selection, Runnable operate) {
         // 普通经脉窗口只处理选脉和开脉，专属练习使用独立窗口。
@@ -50,6 +54,8 @@ public final class MeridianPanel {
         this.selection = selection;
         content = UIModelLoader.get(Identifier.fromNamespaceAndPath("meridian_ui", "opening"))
                 .expandTemplate(FlowLayout.class, "meridian-panel", Map.of());
+        scenePane = content.childById(FlowLayout.class, "scene");
+        data = new MeridianDataPage(body);
         canvas = new BodyCanvas(scene, this::clicked, () -> {
             // 中键只重置镜头和当前高亮，不改变身体状态。
             canvas().overview();
@@ -67,17 +73,38 @@ public final class MeridianPanel {
     }
 
     private void mountScene() {
-        // 练习扩展挂载完整场景，普通经脉保留自身标题和说明入口。
+        // 练习扩展挂载完整场景，普通经脉保留「经脉 / 数据」页签和说明入口。
         if (extension != null) {
-            content.removeChild(content.childById(UIComponent.class, "title"));
+            content.removeChild(content.childById(UIComponent.class, "tabs"));
             content.removeChild(content.childById(UIComponent.class, "info"));
-            content.childById(FlowLayout.class, "scene").child(extension.component());
+            scenePane.child(extension.component());
             canvas.onDispose(extension::close);
         } else {
+            var tabs = content.childById(FlowLayout.class, "tabs");
+            tabs.child(new MeridianTab("meridian-tab-scene", "经脉", () -> tab == Tab.SCENE, () -> show(Tab.SCENE)));
+            tabs.child(new MeridianTab("meridian-tab-data", "数据", () -> tab == Tab.DATA, () -> show(Tab.DATA)));
             content.childById(FlowLayout.class, "info").child(new MeridianInfo());
-            content.childById(FlowLayout.class, "scene").child(canvas);
+            scenePane.child(canvas);
             content.child(actions);
         }
+    }
+
+    void show(Tab next) {
+        // 切页只换内容区的子组件；画布不释放，切回来镜头和高亮照旧。
+        if (next == tab) {
+            return;
+        }
+        tab = next;
+        if (tab == Tab.DATA) {
+            content.removeChild(scenePane);
+            content.removeChild(actions);
+            content.child(data.root());
+        } else {
+            content.removeChild(data.root());
+            content.child(scenePane);
+            content.child(actions);
+        }
+        arrange(root.width(), root.height());
     }
 
     void actions(List<MeridianAction> available) {
@@ -109,10 +136,14 @@ public final class MeridianPanel {
                     width - SCENE_MARGIN, height - SCENE_MARGIN);
             return;
         }
-        place(content.childById(UIComponent.class, "title"), TITLE_LEFT, TITLE_TOP,
+        place(content.childById(UIComponent.class, "tabs"), TITLE_LEFT, TITLE_TOP,
                 width - TITLE_MARGIN, TITLE_HEIGHT);
         place(content.childById(UIComponent.class, "info"), width - INFO_RIGHT, INFO_TOP,
                 TITLE_HEIGHT, TITLE_HEIGHT);
+        if (tab == Tab.DATA) {
+            place(data.root(), SCENE_INSET, SCENE_TOP, width - SCENE_MARGIN, height - SCENE_TOP - SCENE_INSET);
+            return;
+        }
         int actionHeight = actions.arrange(width - SCENE_MARGIN);
         int actionTop = height - actionHeight - SCENE_INSET;
         place(content.childById(UIComponent.class, "scene"), SCENE_INSET, SCENE_TOP,
@@ -148,6 +179,8 @@ public final class MeridianPanel {
         canvas.opening(scene, body);
         if (extension != null) {
             extension.update(body);
+        } else {
+            data.update(body);
         }
     }
 
