@@ -15,6 +15,7 @@ final class DataSummaryCard extends BaseUIComponent {
     private static final int COLUMN_GAP = 10;
     private static final int MIN_COLUMN = 1;
     private static final int LABEL_GAP = 2;
+    private final HoverNotes notes = new HoverNotes(this);
     private MeridianData.Page page;
 
     DataSummaryCard(MeridianData.Page page) {
@@ -30,59 +31,75 @@ final class DataSummaryCard extends BaseUIComponent {
 
     @Override
     public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
-        // 从上到下：标题、总数、内腔、外壁、相态柱、器官与在途。
+        // 从上到下：标题、总数、内腔、外壁、相态柱、器官与在途；每块登记一条悬停说明。
+        notes.begin();
         MeridianTheme.panel(context, new MeridianTheme.Bounds(x, y, width, height));
         int left = x + DataDrawing.PADDING;
         int right = x + width - DataDrawing.PADDING;
         int inner = right - left;
         int top = y + DataDrawing.PADDING;
-        DataDrawing.heading(context, "整体", left, top, inner);
+        DataDrawing.heading(context, DataText.get("summary"), left, top, inner);
         top += DataDrawing.HEADING_HEIGHT;
-        DataDrawing.text(context, "经脉真元", left, top, ThemeTokens.TEXT);
-        DataDrawing.textRight(context, DataDrawing.number(page.meridianTotal()) + DataDrawing.UNIT, right, top,
-                ThemeTokens.TEXT);
+        DataDrawing.text(context, DataText.get("total"), left, top, ThemeTokens.TEXT);
+        DataDrawing.textRight(context, DataDrawing.amount(page.meridianTotal()), right, top, ThemeTokens.TEXT);
+        notes.add(new MeridianTheme.Bounds(left, top, inner, DataDrawing.LINE_HEIGHT),
+                () -> DataText.get("tip.total"));
         top += DataDrawing.LINE_HEIGHT;
-        account(context, "内腔", page.lumen(), top);
+        account(context, DataText.get("lumen"), page.lumen(), top);
         top += ACCOUNT_HEIGHT;
-        account(context, "外壁", page.wall(), top);
+        account(context, DataText.get("wall"), page.wall(), top);
         top += ACCOUNT_HEIGHT;
-        DataDrawing.heading(context, "按相态", left, top, inner);
+        DataDrawing.heading(context, DataText.get("by_phase"), left, top, inner);
         top += DataDrawing.HEADING_HEIGHT;
         phases(context, top);
-        String footer = "器官缓存 " + DataDrawing.number(page.organs()) + DataDrawing.UNIT
-                + "　在途 " + DataDrawing.number(page.transits()) + DataDrawing.UNIT;
-        DataDrawing.text(context, footer, left, y + height - DataDrawing.PADDING - DataDrawing.LINE_HEIGHT,
-                ThemeTokens.MUTED_TEXT);
+        String footer = DataText.get("footer", DataDrawing.number(page.organs()), DataDrawing.number(page.transits()));
+        int footerTop = y + height - DataDrawing.PADDING - DataDrawing.LINE_HEIGHT;
+        DataDrawing.text(context, footer, left, footerTop, ThemeTokens.MUTED_TEXT);
+        notes.add(new MeridianTheme.Bounds(left, footerTop, inner, DataDrawing.LINE_HEIGHT),
+                () -> DataText.get("tip.footer"));
+        notes.finish(mouseX, mouseY);
     }
 
     private void account(OwoUIGraphics context, String name, MeridianData.Account account, int top) {
         // 一行名称和「已有 / 可装」，下面一条按体积算的装载条。
         int left = x + DataDrawing.PADDING;
         int right = x + width - DataDrawing.PADDING;
-        String caption = DataDrawing.amountOf(account) + "（" + DataDrawing.percent(account.fill()) + "）";
+        String caption = DataText.get("account", DataDrawing.amountOf(account), DataDrawing.percent(account.fill()));
         DataDrawing.text(context, name, left, top, ThemeTokens.TEXT);
         DataDrawing.textRight(context, caption, right, top, ThemeTokens.MUTED_TEXT);
         var bounds = new MeridianTheme.Bounds(left, top + BAR_TOP, right - left, DataDrawing.BAR_HEIGHT);
         DataDrawing.bar(context, bounds, account.fill(), MeridianTheme.color(ThemeTokens.PROGRESS_FILL));
+        notes.add(new MeridianTheme.Bounds(left, top, right - left, ACCOUNT_HEIGHT), () -> DataText.get("tip.account",
+                name, DataDrawing.number(account.amount()), DataDrawing.number(account.capacity()),
+                DataDrawing.percent(account.fill())));
     }
 
     private void phases(OwoUIGraphics context, int top) {
-        // 只画身体里实际有的相态；柱高按最多的那一相归一，柱顶写占比，柱下写相态名。
+        // 只画身体里实际有的相态；柱高按最多的那一相归一，柱顶写占比，柱下写相态名；放不下的柱不画。
         if (page.phases().isEmpty()) {
-            DataDrawing.text(context, "经脉里没有真元", x + DataDrawing.PADDING, top, ThemeTokens.MUTED_TEXT);
+            DataDrawing.text(context, DataText.get("no_qi"), x + DataDrawing.PADDING, top, ThemeTokens.MUTED_TEXT);
             return;
         }
         double max = page.phases().stream().mapToDouble(MeridianData.Share::amount).max().orElse(0);
         double total = page.meridianTotal();
         int baseline = top + DataDrawing.LINE_HEIGHT + COLUMN_AREA;
         int column = x + DataDrawing.PADDING;
+        int right = x + width - DataDrawing.PADDING;
         for (MeridianData.Share phase : page.phases()) {
+            if (column + COLUMN_WIDTH > right) {
+                return;
+            }
             int barHeight = Math.max(MIN_COLUMN, (int) Math.round(COLUMN_AREA * QiDisplay.ratio(phase.amount(), max)));
             context.fill(column, baseline - barHeight, column + COLUMN_WIDTH, baseline,
                     MeridianTheme.color(ThemeTokens.PROGRESS_FILL));
-            DataDrawing.text(context, DataDrawing.share(phase.amount(), total), column, baseline - barHeight
-                    - DataDrawing.LINE_HEIGHT + LABEL_GAP, ThemeTokens.MUTED_TEXT);
-            DataDrawing.text(context, phase.name(), column, baseline + LABEL_GAP, ThemeTokens.TEXT);
+            String share = DataDrawing.share(phase.amount(), total);
+            DataDrawing.text(context, share, column, baseline - barHeight - DataDrawing.LINE_HEIGHT + LABEL_GAP,
+                    ThemeTokens.MUTED_TEXT);
+            String name = phase.name();
+            DataDrawing.text(context, name, column, baseline + LABEL_GAP, ThemeTokens.TEXT);
+            var area = new MeridianTheme.Bounds(column, top, COLUMN_WIDTH + COLUMN_GAP,
+                    baseline + LABEL_GAP + DataDrawing.LINE_HEIGHT - top);
+            notes.add(area, () -> DataText.get("tip.phase", name, DataDrawing.number(phase.amount()), share));
             column += COLUMN_WIDTH + COLUMN_GAP;
         }
     }

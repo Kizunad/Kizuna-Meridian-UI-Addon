@@ -81,8 +81,10 @@ public final class MeridianPanel {
             canvas.onDispose(extension::close);
         } else {
             var tabs = content.childById(FlowLayout.class, "tabs");
-            tabs.child(new MeridianTab("meridian-tab-scene", "经脉", () -> tab == Tab.SCENE, () -> show(Tab.SCENE)));
-            tabs.child(new MeridianTab("meridian-tab-data", "数据", () -> tab == Tab.DATA, () -> show(Tab.DATA)));
+            tabs.child(new MeridianTab("meridian-tab-scene", () -> DataText.get("tab.scene"), () -> tab == Tab.SCENE,
+                    () -> show(Tab.SCENE)));
+            tabs.child(new MeridianTab("meridian-tab-data", () -> DataText.get("tab.data"), () -> tab == Tab.DATA,
+                    () -> show(Tab.DATA)));
             content.childById(FlowLayout.class, "info").child(new MeridianInfo());
             scenePane.child(canvas);
             content.child(actions);

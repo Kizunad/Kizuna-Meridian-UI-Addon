@@ -16,7 +16,7 @@ final class MeridianInfo extends BaseUIComponent {
     MeridianInfo() {
         // 自绘圆环避免依赖字体是否包含圆形 i，也保持与场景控件一致的外观。
         sizing(Sizing.fixed(SIZE), Sizing.fixed(SIZE));
-        tooltip(Component.literal("F - Focus\nG - 凝聚真元 / 暂停"));
+        tooltip(Component.literal("F - Focus\nG - 凝聚真元 / 暂停\n" + DataText.get("help")));
     }
 
     @Override

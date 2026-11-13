@@ -19,6 +19,7 @@ Human Fabric 宿主已经通过 Protobuf 推送玩家身体快照、展示资源
 - [模型资源与通用查看器](Body-Viewer.md)
 - [独立修炼窗口](Gathering.md)
 - [经脉窗口与开脉操作](Meridian-Opening.md)
+- [经脉数据页](Meridian-Data.md)
 - [功法配置窗口](Combat-Slots.md)
 - [集中设置接入](Central-Settings.md)
 - [功法书页背景资源](Combat-Book-Assets.md)

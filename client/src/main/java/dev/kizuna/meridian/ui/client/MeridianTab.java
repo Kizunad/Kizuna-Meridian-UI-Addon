@@ -6,6 +6,7 @@ import io.wispforest.owo.ui.core.CursorStyle;
 import io.wispforest.owo.ui.core.OwoUIGraphics;
 import io.wispforest.owo.ui.core.Sizing;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import org.lwjgl.glfw.GLFW;
@@ -15,18 +16,30 @@ final class MeridianTab extends BaseUIComponent {
     static final int WIDTH = 48;
     static final int HEIGHT = 18;
     private static final int MARK_HEIGHT = 2;
-    private final String label;
+    private static final int LABEL_PADDING = 6;
+    private final Supplier<String> label;
     private final BooleanSupplier selected;
     private final Runnable select;
+    private int fittedWidth;
 
-    MeridianTab(String id, String label, BooleanSupplier selected, Runnable select) {
-        // 两个页签共用同一套绘制，标题文字即页名。
+    MeridianTab(String id, Supplier<String> label, BooleanSupplier selected, Runnable select) {
+        // 两个页签共用同一套绘制，标题文字即页名，按当前语言取。
         this.label = label;
         this.selected = selected;
         this.select = select;
         id(id);
-        sizing(Sizing.fixed(WIDTH), Sizing.fixed(HEIGHT));
         cursorStyle(CursorStyle.HAND);
+        fit(label.get());
+    }
+
+    private void fit(String text) {
+        // 译名较长时页签跟着加宽；宽度没变就不重排。
+        int needed = Math.max(WIDTH, DataDrawing.font().width(text) + LABEL_PADDING * 2);
+        if (needed == fittedWidth) {
+            return;
+        }
+        fittedWidth = needed;
+        sizing(Sizing.fixed(needed), Sizing.fixed(HEIGHT));
     }
 
     @Override
@@ -47,10 +60,12 @@ final class MeridianTab extends BaseUIComponent {
             context.fill(x + 1, y + height - MARK_HEIGHT - 1, x + width - 1, y + height - 1,
                     MeridianTheme.color(ThemeTokens.ACCENT));
         }
+        String text = label.get();
+        fit(text);
         var font = DataDrawing.font();
-        int textX = x + (width - font.width(label)) / 2;
+        int textX = x + (width - font.width(text)) / 2;
         int textY = y + (height - font.lineHeight) / 2;
-        context.text(font, label, textX, textY, MeridianTheme.color(foreground), false /* shadow */);
+        context.text(font, text, textX, textY, MeridianTheme.color(foreground), false /* shadow */);
     }
 
     @Override

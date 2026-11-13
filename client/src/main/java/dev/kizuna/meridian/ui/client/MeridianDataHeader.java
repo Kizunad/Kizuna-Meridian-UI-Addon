@@ -18,8 +18,9 @@ final class MeridianDataHeader extends BaseUIComponent {
     static final int MAIN = 5;
     private static final int FULL = 100;
     private static final int TEXT_TOP = 3;
-    private static final List<String> TITLES = List.of("经脉", "开拓", "内腔", "外壁", "平均密度", "主属性");
+    private static final List<String> COLUMNS = List.of("name", "opening", "lumen", "wall", "density", "main");
     private static final double[] STARTS = {0, 0.19, 0.31, 0.53, 0.75, 0.88, 1};
+    private final HoverNotes notes = new HoverNotes(this);
 
     MeridianDataHeader() {
         // 宽度随数据页，高度固定一行字。
@@ -40,12 +41,19 @@ final class MeridianDataHeader extends BaseUIComponent {
 
     @Override
     public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
-        // 表头用标题栏底色，列名淡色。
+        // 表头用标题栏底色，列名淡色；悬停列名说明这一列怎么算。
+        notes.begin();
         context.fill(x, y, x + width, y + height, MeridianTheme.color(ThemeTokens.HEADER));
         context.fill(x, y + height - 1, x + width, y + height, MeridianTheme.color(ThemeTokens.BORDER));
-        for (int column = 0; column < TITLES.size(); column++) {
-            DataDrawing.text(context, TITLES.get(column), left(x, width, column), y + TEXT_TOP,
-                    ThemeTokens.MUTED_TEXT);
+        var font = DataDrawing.font();
+        for (int column = 0; column < COLUMNS.size(); column++) {
+            String key = COLUMNS.get(column);
+            int left = left(x, width, column);
+            String title = font.plainSubstrByWidth(DataText.get("column." + key), width(width, column));
+            DataDrawing.text(context, title, left, y + TEXT_TOP, ThemeTokens.MUTED_TEXT);
+            notes.add(new MeridianTheme.Bounds(left, y, width(width, column) + CELL_GAP, height),
+                    () -> DataText.get("tip.column." + key));
         }
+        notes.finish(mouseX, mouseY);
     }
 }

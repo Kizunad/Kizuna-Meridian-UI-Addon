@@ -16,6 +16,8 @@ final class ElementCard extends BaseUIComponent {
     private static final double PIXEL_CENTER = 0.5;
     private static final int SWATCH = 7;
     private static final int LEGEND_TEXT = 11;
+    private static final int LEGEND_GAP = 4;
+    private final HoverNotes notes = new HoverNotes(this);
     private MeridianData.Page page;
     private List<Run> runs = List.of();
     private int cachedDiameter = -1;
@@ -42,16 +44,19 @@ final class ElementCard extends BaseUIComponent {
 
     @Override
     public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
-        // 左边圆环、中心写主属性，右边图例。
+        // 左边圆环、中心写主属性，右边图例；圆环和每行图例各有悬停说明。
+        notes.begin();
         MeridianTheme.panel(context, new MeridianTheme.Bounds(x, y, width, height));
         int left = x + DataDrawing.PADDING;
         int top = y + DataDrawing.PADDING;
-        DataDrawing.heading(context, "元素构成", left, top, width - DataDrawing.PADDING * 2);
+        DataDrawing.heading(context, DataText.get("elements"), left, top, width - DataDrawing.PADDING * 2);
         top += DataDrawing.HEADING_HEIGHT;
         int available = Math.min(height - DataDrawing.HEADING_HEIGHT, width / 2) - DataDrawing.PADDING * 2;
         int diameter = Math.max(0, Math.min(MAX_DIAMETER, available));
         ring(context, left, top, diameter);
+        notes.add(new MeridianTheme.Bounds(left, top, diameter, diameter), () -> DataText.get("tip.ring"));
         legend(context, left + diameter + DataDrawing.PADDING * 2, top);
+        notes.finish(mouseX, mouseY);
     }
 
     private void ring(OwoUIGraphics context, int left, int top, int diameter) {
@@ -67,15 +72,15 @@ final class ElementCard extends BaseUIComponent {
         int centerY = top + diameter / 2;
         var font = DataDrawing.font();
         if (page.elements().isEmpty()) {
-            String empty = "无真元";
+            String empty = DataText.get("ring_empty");
             DataDrawing.text(context, empty, centerX - font.width(empty) / 2, centerY - font.lineHeight / 2,
                     ThemeTokens.MUTED_TEXT);
             return;
         }
         MeridianData.Share main = page.elements().getFirst();
         String share = DataDrawing.share(main.amount(), total());
-        DataDrawing.text(context, main.name(), centerX - font.width(main.name()) / 2, centerY - font.lineHeight,
-                ThemeTokens.TEXT);
+        String name = main.name();
+        DataDrawing.text(context, name, centerX - font.width(name) / 2, centerY - font.lineHeight, ThemeTokens.TEXT);
         DataDrawing.text(context, share, centerX - font.width(share) / 2, centerY + 1, ThemeTokens.MUTED_TEXT);
     }
 
@@ -128,16 +133,24 @@ final class ElementCard extends BaseUIComponent {
     }
 
     private void legend(OwoUIGraphics context, int left, int top) {
-        // 每个属性一行：色块、名称、元数和占比，元数多的在上。
+        // 每个属性一行：色块、名称、元数和占比，元数多的在上；窄卡片放不下元数时只写占比。
         int right = x + width - DataDrawing.PADDING;
         int row = top;
         double total = total();
+        var font = DataDrawing.font();
         for (MeridianData.Share share : page.elements()) {
             context.fill(left, row + 1, left + SWATCH, row + 1 + SWATCH, MeridianData.elementColor(share.key()));
-            DataDrawing.text(context, share.name(), left + LEGEND_TEXT, row, ThemeTokens.TEXT);
-            String amount = DataDrawing.number(share.amount()) + DataDrawing.UNIT + "  "
-                    + DataDrawing.share(share.amount(), total);
+            String name = share.name();
+            DataDrawing.text(context, name, left + LEGEND_TEXT, row, ThemeTokens.TEXT);
+            String percent = DataDrawing.share(share.amount(), total);
+            String amount = DataDrawing.amount(share.amount()) + "  " + percent;
+            int nameRight = left + LEGEND_TEXT + font.width(name) + LEGEND_GAP;
+            if (right - font.width(amount) < nameRight) {
+                amount = percent;
+            }
             DataDrawing.textRight(context, amount, right, row, ThemeTokens.MUTED_TEXT);
+            notes.add(new MeridianTheme.Bounds(left, row, right - left, DataDrawing.LINE_HEIGHT),
+                    () -> DataText.get("tip.element", name, DataDrawing.number(share.amount()), percent));
             row += DataDrawing.LINE_HEIGHT;
         }
     }

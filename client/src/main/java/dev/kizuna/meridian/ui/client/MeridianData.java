@@ -13,13 +13,6 @@ import java.util.Map;
 final class MeridianData {
     static final String NONE = "meridian:none";
     private static final int OPAQUE = 0xFF000000;
-    private static final Map<String, String> ELEMENT_NAMES = Map.of(
-            NONE, "无属性",
-            "meridian:metal", "金",
-            "meridian:wood", "木",
-            "meridian:water", "水",
-            "meridian:fire", "火",
-            "meridian:earth", "土");
 
     /** 一个账户（内腔或外壁）的元数、按实际密度换算的可装元数和体积占用比例。 */
     record Account(double amount, double capacity, double fill) {
@@ -31,8 +24,16 @@ final class MeridianData {
         }
     }
 
-    /** 某一相态或属性在全身经脉里合计的元数。 */
-    record Share(String key, String name, double amount) { }
+    /** 构成项是相态还是属性；两者的键和叫法各走一套。 */
+    enum Kind { PHASE, ELEMENT }
+
+    /** 某一相态（键为相态名）或属性（键为属性 ID）在经脉里合计的元数。 */
+    record Share(Kind kind, String key, double amount) {
+        String name() {
+            // 界面叫法随当前语言。
+            return DataText.share(this);
+        }
+    }
 
     /** 明细表的一行；状态缺失的经脉不进表，交给检视窗口报缺失。 */
     record Row(MeridianDefinition definition, MeridianState state, Account lumen, Account wall,
@@ -52,6 +53,13 @@ final class MeridianData {
         double meridianTotal() {
             // 经脉真元 = 全身内腔 + 外壁，不含器官缓存和在途。
             return lumen.amount() + wall.amount();
+        }
+
+        long opened() {
+            // 已开拓的经脉条数；为 0 时数据页给出开拓提示。
+            return rows.stream()
+                    .filter(row -> row.state().getOpening().getStage() == MeridianOpeningStage.OPENED)
+                    .count();
         }
     }
 
@@ -145,7 +153,7 @@ final class MeridianData {
             totals.merge(QiDensity.phase(entry.getDensity()), entry.getAmount(), Double::sum);
         }
         var shares = new ArrayList<Share>();
-        totals.forEach((phase, amount) -> shares.add(new Share(phase.name(), StoredPhaseCaption.name(phase), amount)));
+        totals.forEach((phase, amount) -> shares.add(new Share(Kind.PHASE, phase.name(), amount)));
         return List.copyOf(shares);
     }
 
@@ -158,13 +166,8 @@ final class MeridianData {
         return totals.entrySet().stream()
                 .sorted(Map.Entry.<String, Double>comparingByValue(Comparator.reverseOrder())
                         .thenComparing(Map.Entry.comparingByKey()))
-                .map(entry -> new Share(entry.getKey(), elementName(entry.getKey()), entry.getValue()))
+                .map(entry -> new Share(Kind.ELEMENT, entry.getKey(), entry.getValue()))
                 .toList();
-    }
-
-    static String elementName(String attribute) {
-        // 五行和无属性用游戏里的叫法；附属自带的属性没有中文名，照写 ID。
-        return ELEMENT_NAMES.getOrDefault(attribute, attribute);
     }
 
     static int elementColor(String attribute) {

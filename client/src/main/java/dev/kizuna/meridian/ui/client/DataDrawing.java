@@ -13,7 +13,6 @@ final class DataDrawing {
     static final int LINE_HEIGHT = 12;
     static final int BAR_HEIGHT = 4;
     static final int PADDING = 6;
-    static final String UNIT = " 元";
     private static final int RULE_OFFSET = 11;
     private static final double PERCENT = 100;
 
@@ -79,9 +78,14 @@ final class DataDrawing {
         return String.format(Locale.ROOT, "%.0f%%", fraction * PERCENT);
     }
 
+    static String amount(double value) {
+        // 「12.00 元」。
+        return DataText.get("amount", number(value));
+    }
+
     static String amountOf(MeridianData.Account account) {
         // 「已有 / 可装 元」。
-        return number(account.amount()) + " / " + number(account.capacity()) + UNIT;
+        return DataText.get("amount_of", number(account.amount()), number(account.capacity()));
     }
 
     static String share(double amount, double total) {
