@@ -13,6 +13,7 @@ import dev.kizuna.meridian.protocol.pb.BodyMessages.BodyStructure;
 import dev.kizuna.meridian.protocol.pb.GatheringMessages.*;
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathControl;
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathAction;
+import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathingView;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.BodyViewUpdate;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.BodyViewRequest;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.MeridianOpeningRule;
@@ -475,8 +476,13 @@ public final class BodyUiModule implements ClientModule {
         } else {
             bodyFits = body.getId().equals(hostBodyId);
         }
-        return bodyFits && (gathering == null
-                || view.getBreathing().getSequence() >= gathering.getBreathing().getSequence());
+        return bodyFits && (gathering == null || newerBreathing(view.getBreathing(), gathering.getBreathing()));
+    }
+
+    private static boolean newerBreathing(BreathingView candidate, BreathingView current) {
+        // 序号只在同一吐纳会话内比较；宿主换了会话（登录、换维度、重生）就从新会话的序号重新算。
+        boolean sameSession = candidate.getSessionId().equals(current.getSessionId());
+        return !sameSession || candidate.getSequence() >= current.getSequence();
     }
 
     private void showGathering() {
