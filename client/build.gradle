@@ -85,6 +85,47 @@ tasks.named("runInnerVisionTest") {
     }
 }
 
+// 灵气徽记在真实完整装配客户端里逐个属性截图，测试入口不进入发行 JAR。
+sourceSets {
+    auraTest {
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+    }
+}
+loom {
+    mods {
+        meridian_ui_aura_test { sourceSet sourceSets.auraTest }
+    }
+    runs {
+        auraEmblemTest {
+            client()
+            source sourceSets.auraTest
+            runDir 'build/aura-emblem-test'
+            programArgs '--quickPlaySingleplayer', 'aura-emblem-test', '--width', '1280', '--height', '960'
+        }
+    }
+}
+tasks.register('prepareAuraEmblemWorld', Copy) {
+    from new File(kizunaWorkspace.directory('progression'), 'fabric/build/gametest/world')
+    into layout.buildDirectory.dir('aura-emblem-test/saves/aura-emblem-test')
+    exclude 'session.lock'
+}
+tasks.named('runAuraEmblemTest') {
+    dependsOn tasks.named('prepareAuraEmblemWorld')
+    def report = layout.buildDirectory.file('aura-emblem-results.txt')
+    doFirst {
+        report.get().asFile.text = 'success=false\n'
+        def options = layout.buildDirectory.file('aura-emblem-test/options.txt').get().asFile
+        options.parentFile.mkdirs()
+        options.text = 'onboardAccessibility:false\nlang:zh_cn\nguiScale:2\n'
+    }
+    doLast {
+        if (!report.get().asFile.text.startsWith('success=true')) {
+            throw new GradleException("灵气徽记客户端验收失败：${report.get().asFile}")
+        }
+    }
+}
+
 // 功法配置验收使用真实完整装配、独立存档和测试输入，不进入发行 JAR。
 sourceSets {
     combatTest {

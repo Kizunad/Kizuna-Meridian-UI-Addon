@@ -54,6 +54,7 @@ public final class BodyUiModule implements ClientModule {
     private String hostBodyId = "";
     private BodyPanel panel;
     private CultivationPanel cultivationPanel;
+    private EnvironmentDetailPanel auraPanel;
     private GatheringView gathering;
     private Consumer<GatheringRequest> gatheringSender;
     private String pendingRequest = "";
@@ -73,6 +74,11 @@ public final class BodyUiModule implements ClientModule {
                         280, 180, 560, 450, Set.of(UiWindowDefinition.Capability.WINDOW))),
                 new FrameworkCatalog.Feature("meridian_ui:cultivation", "吐纳", "修炼",
                         "meridian_ui:cultivation_icon", "meridian_ui:cultivation_window"),
+                // 「此地灵气」小窗只从吐纳窗口的徽记打开，不进菜单。
+                new FrameworkCatalog.Window(new UiWindowDefinition("meridian_ui:aura_window", "meridian_ui:body",
+                        170, 150, 210, 180, Set.of(UiWindowDefinition.Capability.WINDOW))),
+                new FrameworkCatalog.Feature(EnvironmentEmblem.DETAIL_FEATURE, "此地灵气", "修炼",
+                        "meridian_ui:cultivation_icon", "meridian_ui:aura_window", false),
                 new FrameworkCatalog.Window(new UiWindowDefinition("meridian_ui:meridian_window", "meridian_ui:body",
                         280, 180, 560, 450, Set.of(UiWindowDefinition.Capability.WINDOW))),
                 new FrameworkCatalog.Feature("meridian_ui:meridians", "经脉", "修炼",
@@ -95,6 +101,7 @@ public final class BodyUiModule implements ClientModule {
         bindings.featureAccess("meridian_ui:meridian_operation", meridians::canOpenOperation);
         // 菜单与直接打开共用各自残卷权限；具体练习门槛由必装生物扩展解释。
         bindings.featureAccess("meridian_ui:cultivation", ClientProgression::canGather);
+        bindings.featureAccess(EnvironmentEmblem.DETAIL_FEATURE, ClientProgression::canGather);
         bindings.featureAccess("meridian_ui:practice", () -> ClientProgression.canCultivate()
                 && dev.kizuna.meridian.ui.api.MeridianSceneExtension.required().lockedReason().isEmpty());
         ClientProgression.onChanged(this::progressChanged);
@@ -139,6 +146,18 @@ public final class BodyUiModule implements ClientModule {
                 GatheringResponse.class, this::receiveGathering), UiWire.Codec.protobuf(GatheringResponse.getDefaultInstance()), false));
         // 没有宿主数据时显示等待状态，不偷偷生成默认人体。
         bindings.window("meridian_ui:body_window", (runtime, window) -> createBodyWindow(window));
+        bindings.window("meridian_ui:aura_window", (runtime, window) -> {
+            // 小窗只显示吐纳视图里已有的当地环境，关窗就丢掉引用。
+            var opened = new EnvironmentDetailPanel();
+            auraPanel = opened;
+            window.scope().addCleanup(() -> {
+                if (auraPanel == opened) {
+                    auraPanel = null;
+                }
+            });
+            showGathering();
+            return opened;
+        });
         bindings.window("meridian_ui:cultivation_window", (runtime, window) -> {
             // 内观模型仍由生物附属提供；没有身体时只显示等待状态。
             ClientProgression.requireCultivation();
@@ -370,6 +389,11 @@ public final class BodyUiModule implements ClientModule {
         return body;
     }
 
+    public GatheringView gatheringView() {
+        // 交互验收读取宿主发来的最新吐纳视图，只读。
+        return gathering;
+    }
+
     public CultivationPanel cultivationPanel() {
         // 修炼窗口具有独立生命周期，未打开时返回空。
         return cultivationPanel;
@@ -489,6 +513,9 @@ public final class BodyUiModule implements ClientModule {
         // 窗口关闭期间只保留最后的只读投影，再打开时恢复当前阶段。
         if (cultivationPanel != null) {
             cultivationPanel.update(gathering, !pendingRequest.isEmpty(), gatheringError);
+        }
+        if (auraPanel != null) {
+            auraPanel.update(gathering != null && gathering.hasEnvironment() ? gathering.getEnvironment() : null);
         }
     }
 

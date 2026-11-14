@@ -2,7 +2,6 @@ package dev.kizuna.meridian.ui.client;
 
 import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathingView;
-import dev.kizuna.meridian.protocol.pb.GatheringMessages.GatheringEnvironment;
 import dev.kizuna.meridian.protocol.pb.GatheringMessages.GatheringView;
 import io.wispforest.owo.ui.base.BaseUIComponent;
 import io.wispforest.owo.ui.container.FlowLayout;
@@ -30,10 +29,9 @@ final class BreathingMeters {
     private static final int QI_CAPTION_TOP = 8;
     /** 纳入量、相态明细、摄入倍率三行的高度。 */
     private static final int QI_SUMMARY_HEIGHT = 35;
-    /** 灵气读数那一行：在余力条下面，宽度够写「此地灵气：充盈，偏木」。 */
-    private static final int ENVIRONMENT_TOP = 38;
-    private static final int ENVIRONMENT_WIDTH = 150;
-    private static final int ENVIRONMENT_HEIGHT = 11;
+    private static final int EMBLEM_MARGIN = 6;
+    /** 窄窗口里余力条占到左边，徽记挪到余力条下面。 */
+    private static final int EMBLEM_COMPACT_TOP = 38;
     private static final int PERCENT = 100;
     private static final int RESERVE_TOP = 16;
     private static final int RESERVE_HEIGHT = 4;
@@ -48,8 +46,7 @@ final class BreathingMeters {
     private final AirGauge air = new AirGauge();
     private final ReserveGauge reserve = new ReserveGauge();
     private final QiSummary qi = new QiSummary();
-    private final EnvironmentLine environmentLine = new EnvironmentLine();
-    private GatheringEnvironment environment;
+    private final EnvironmentEmblem emblem = new EnvironmentEmblem();
     private final ActionRow action;
     private BreathingView breath = BreathingView.getDefaultInstance();
 
@@ -68,9 +65,10 @@ final class BreathingMeters {
         action.sizing(Sizing.fixed(120), Sizing.fixed(30));
         action.positioning(Positioning.relative(50, 100));
         action.margins(Insets.bottom(34));
-        environmentLine.positioning(Positioning.relative(50, 0));
-        environmentLine.margins(Insets.top(ENVIRONMENT_TOP));
-        for (UIComponent control : List.of(reserve, environmentLine, air, action, qi)) {
+        // 灵气徽记放在场景左上角，不和顶上的余力条、底下的肺和纳入量争位置。
+        emblem.positioning(Positioning.relative(0, 0));
+        emblem.margins(Insets.of(EMBLEM_MARGIN, 0, EMBLEM_MARGIN, 0));
+        for (UIComponent control : List.of(reserve, emblem, air, action, qi)) {
             scene.child(control);
         }
     }
@@ -84,18 +82,12 @@ final class BreathingMeters {
         qi.margins(Insets.of(0, compact ? 88 : FOOTER_CLEARANCE, 0, compact ? 6 : 12));
         action.sizing(Sizing.fixed(compact ? 104 : 120), Sizing.fixed(compact ? 26 : 30));
         reserve.horizontalSizing(Sizing.fill(compact ? 78 : 64));
+        emblem.margins(Insets.of(compact ? EMBLEM_COMPACT_TOP : EMBLEM_MARGIN, 0, EMBLEM_MARGIN, 0));
     }
 
     void update(GatheringView view, String error) {
         // 快照到达时刷新提示与总账，逐帧仅绘制空气插值，不重复汇总身体明细。
-        environment = view != null && view.hasEnvironment() ? view.getEnvironment() : null;
-        if (environment == null) {
-            environmentLine.tooltip(List.<net.minecraft.network.chat.Component>of());
-        } else {
-            environmentLine.tooltip(EnvironmentCaption.details(environment).stream()
-                    .map(line -> (net.minecraft.network.chat.Component) net.minecraft.network.chat.Component.literal(line))
-                    .toList());
-        }
+        emblem.update(view != null && view.hasEnvironment() ? view.getEnvironment() : null);
         if (view == null || !view.hasBreathing()) {
             breath = BreathingView.getDefaultInstance();
             action.tooltip(net.minecraft.network.chat.Component.literal(error.isEmpty() ? UiErrors.BREATHING_UNAVAILABLE : error));
@@ -235,26 +227,6 @@ final class BreathingMeters {
                         resumeX + 1, y + RESERVE_TOP + RESERVE_HEIGHT + STOP_OVERHANG,
                         MeridianTheme.color(ThemeTokens.PROGRESS_FILL));
             }
-        }
-    }
-
-    private final class EnvironmentLine extends BaseUIComponent {
-        EnvironmentLine() {
-            // 余力条下面居中的一行，悬浮看浓度和五行各占几成。
-            sizing(Sizing.fixed(ENVIRONMENT_WIDTH), Sizing.fixed(ENVIRONMENT_HEIGHT));
-            id("breathing-environment");
-        }
-
-        @Override
-        public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
-            // 还没收到环境视图时不画，不显示猜出来的读数。
-            if (environment == null) {
-                return;
-            }
-            var font = Minecraft.getInstance().font;
-            String caption = font.plainSubstrByWidth(EnvironmentCaption.of(environment), width);
-            context.text(font, caption, x + (width - font.width(caption)) / 2, y + 1,
-                    MeridianTheme.color(ThemeTokens.MUTED_TEXT), false /* shadow */);
         }
     }
 
