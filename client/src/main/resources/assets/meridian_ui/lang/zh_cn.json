@@ -63,5 +63,13 @@
   "meridian_ui.data.tip.column.main": "内腔与外壁合计元数最多的属性。",
   "meridian_ui.data.tip.row": "%s\n内腔：%s（%s）\n外壁：%s（%s）\n%s",
   "meridian_ui.data.tip.expand": "点击展开详情",
-  "meridian_ui.data.tip.collapse": "点击收起详情"
+  "meridian_ui.data.tip.collapse": "点击收起详情",
+  "codex.hint.everyone_common": "{生人}里修出{境界}的人人都会，若在道上胜过他们，常能从身上搜出这一卷。",
+  "codex.hint.everyone_rare": "{生人}里修出{境界}的个个精通，只是胜过他们后，也极难从身上摸到卷轴。",
+  "codex.hint.some_common": "{生人}里修出{境界}的仅少数人通晓，若能胜过他们，身上常能找到这一卷。",
+  "codex.hint.some_rare": "{生人}里修出{境界}的只有少数人会，即便胜过他们，也难得从身上寻见。",
+  "codex.hint.wide_common": "世间修出{境界}的各路好手大多通晓，胜过他们之后，常能从身上找到这一卷。",
+  "codex.hint.wide_rare": "四方修出{境界}的各色生人大多都会，只是即便胜过他们，身上也难得寻见。",
+  "codex.hint.unknown": "这一卷在世间下落不明，走遍四方，至今还没听说有哪一路生人真正练成过。",
+  "codex.hint.origin_foe": "那是{出身}的仇家随身带着的卷子，待到仇家寻仇上门，唯有胜过他们方能拿到。"
 }

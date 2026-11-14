@@ -26,6 +26,7 @@ import dev.kizuna.meridian.fabric.MeridianChannels;
 import io.wispforest.owo.ui.component.UIComponents;
 import io.wispforest.owo.ui.core.UIComponent;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.PictureInPictureRendererRegistry;
@@ -391,6 +392,13 @@ public final class BodyUiModule implements ClientModule {
     public BodySnapshot snapshot() {
         // 附属与交互验收读取已经通过连接身份和版本检查的同一不可变投影。
         return body;
+    }
+
+    static int realm() {
+        // 功法谱读这具身体的境界：入口实例由 Fabric 建一次；身体快照还没到时按凡人算。
+        return FabricLoader.getInstance().getEntrypoints("kizuna_inventory_ui", ClientModule.class).stream()
+                .filter(BodyUiModule.class::isInstance).map(BodyUiModule.class::cast).findFirst()
+                .map(BodyUiModule::snapshot).map(BodySnapshot::getRealmValue).orElse(0);
     }
 
     public GatheringView gatheringView() {

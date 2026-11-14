@@ -63,5 +63,13 @@
   "meridian_ui.data.tip.column.main": "The element with the most qi across lumen and wall.",
   "meridian_ui.data.tip.row": "%s\nLumen: %s (%s)\nWall: %s (%s)\n%s",
   "meridian_ui.data.tip.expand": "Click to show details",
-  "meridian_ui.data.tip.collapse": "Click to hide details"
+  "meridian_ui.data.tip.collapse": "Click to hide details",
+  "codex.hint.everyone_common": "Common among any {生人} who has attained {境界}. Best them upon the road, and this scroll is readily turned up from their pockets.",
+  "codex.hint.everyone_rare": "Known by every {生人} of {境界}, yet even after overcoming them, finding the scroll upon their person remains a rare thing.",
+  "codex.hint.some_common": "Held only by a few {生人} who have attained {境界}, but should you overcome those who know it, the scroll is often found on them.",
+  "codex.hint.some_rare": "Practiced by only a handful of {生人} at {境界}; even if you best them, you will rarely lay hands on their scroll.",
+  "codex.hint.wide_common": "Known by most across the realm who have cultivated {境界}. Best them, and you will often recover this scroll from their effects.",
+  "codex.hint.wide_rare": "Familiar to many beings across the realm who have reached {境界}, though even in victory, the scroll is rarely discovered upon them.",
+  "codex.hint.unknown": "Lost to the four winds. Across all my wanderings, I have yet to hear of any living soul who has truly mastered this volume.",
+  "codex.hint.origin_foe": "A scroll kept close by blood-foes of {出身}. When vengeance brings them to your door, only besting them will claim it."
 }

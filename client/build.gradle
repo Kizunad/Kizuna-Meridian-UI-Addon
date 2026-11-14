@@ -21,6 +21,10 @@ dependencies {
     compileOnly 'dev.kizuna.meridian:fabric'
     compileOnly 'dev.kizuna.meridian.progression:client'
     compileOnly 'dev.kizuna.meridian.combat:fabric'
+    // 功法谱读功法库初始化期登记的卷轴目录与学会通知；功法库随 Combat 整套必装。
+    compileOnly 'dev.kizuna.meridian.technique:fabric'
+    compileOnly 'dev.kizuna.meridian.technique:server'
+    compileOnly 'dev.kizuna.meridian.technique:shared'
     implementation 'dev.kizuna.meridian.combat:core'
     implementation 'dev.kizuna.meridian.progression:shared'
     testImplementation libs.junit4
@@ -210,6 +214,51 @@ tasks.named('runStanceSettingsTest') {
     doLast {
         if (!report.get().asFile.text.startsWith('success=true')) {
             throw new GradleException("姿态设置客户端验收失败：${report.get().asFile}")
+        }
+    }
+}
+
+// 功法谱原型在真实完整装配客户端里截图：总览、一本书三种状态、读卷点亮，测试入口不进入发行 JAR。
+sourceSets {
+    codexTest {
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+    }
+}
+dependencies {
+    codexTestImplementation 'dev.kizuna.meridian.technique:fabric'
+    codexTestImplementation 'dev.kizuna.meridian.technique:server'
+}
+loom {
+    mods {
+        meridian_ui_codex_test { sourceSet sourceSets.codexTest }
+    }
+    runs {
+        codexTest {
+            client()
+            source sourceSets.codexTest
+            runDir 'build/codex-test'
+            programArgs '--quickPlaySingleplayer', 'codex-test', '--width', '1280', '--height', '960'
+        }
+    }
+}
+tasks.register('prepareCodexWorld', Copy) {
+    from new File(kizunaWorkspace.directory('progression'), 'fabric/build/gametest/world')
+    into layout.buildDirectory.dir('codex-test/saves/codex-test')
+    exclude 'session.lock'
+}
+tasks.named('runCodexTest') {
+    dependsOn tasks.named('prepareCodexWorld')
+    def report = layout.buildDirectory.file('codex-results.txt')
+    doFirst {
+        report.get().asFile.text = 'success=false\n'
+        def options = layout.buildDirectory.file('codex-test/options.txt').get().asFile
+        options.parentFile.mkdirs()
+        options.text = 'onboardAccessibility:false\nlang:zh_cn\nguiScale:2\ntutorialStep:none\n'
+    }
+    doLast {
+        if (!report.get().asFile.text.startsWith('success=true')) {
+            throw new GradleException("功法谱客户端截图失败：${report.get().asFile}")
         }
     }
 }

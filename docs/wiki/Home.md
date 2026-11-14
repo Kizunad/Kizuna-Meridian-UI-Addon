@@ -23,5 +23,6 @@ Human Fabric 宿主已经通过 Protobuf 推送玩家身体快照、展示资源
 - [功法配置窗口](Combat-Slots.md)
 - [集中设置接入](Central-Settings.md)
 - [功法书页背景资源](Combat-Book-Assets.md)
+- [功法谱书页](Technique-Codex.md)
 
 文档编辑源为本仓库 `docs/wiki/`。GitHub Wiki 开关启用与 Wiki 页面发布是两件事；本次仅准备仓库内文档。
