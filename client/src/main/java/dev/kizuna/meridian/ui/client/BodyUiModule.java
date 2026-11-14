@@ -137,6 +137,10 @@ public final class BodyUiModule implements ClientModule {
             if (cultivationPanel != null) {
                 cultivationPanel.canvas().tickInput();
             }
+            // 检视摘要里的负重读数不随身体快照来，开着窗口时逐 tick 核对。
+            if (panel != null) {
+                panel.tick();
+            }
         });
         bindings.message(new UiWire.Contract<>(new UiMessageRouter.Contract<>("meridian_ui:body",
                 "meridian_ui:gathering_request", 1, UiMessageRouter.Direction.CLIENT_TO_SERVER,

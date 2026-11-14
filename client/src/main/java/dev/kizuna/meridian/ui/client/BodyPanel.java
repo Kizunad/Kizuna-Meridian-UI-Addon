@@ -38,6 +38,7 @@ public final class BodyPanel {
     private final Set<String> visibleLayers = new LinkedHashSet<>();
     private BodyVisual selected;
     private List<BodyVisual> visible = List.of();
+    private List<net.minecraft.network.chat.Component> summary = List.of();
 
     public BodyPanel(BodyScene scene, BodySnapshot body) {
         // 模板校验先于窗口创建；加载唯一 XML 模板，不在代码中另建平行布局。
@@ -168,10 +169,18 @@ public final class BodyPanel {
         showInformation();
     }
 
+    /** 摘要里有不跟身体快照走的行（负重读数），每个客户端 tick 看一次，变了才重排文字。 */
+    public void tick() {
+        if (!extension.bodySummaryLines(body).equals(summary)) {
+            showInformation();
+        }
+    }
+
     private void showInformation() {
         // 普通状态更新只替换文字，让玩家已调整的镜头与选择保持稳定。
         var text = net.minecraft.network.chat.Component.empty();
-        for (var line : extension.bodySummaryLines(body)) {
+        summary = extension.bodySummaryLines(body);
+        for (var line : summary) {
             text.append(line).append("\n");
         }
         text.append("\n");
