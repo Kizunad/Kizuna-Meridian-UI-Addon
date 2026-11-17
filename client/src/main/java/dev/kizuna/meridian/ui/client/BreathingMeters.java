@@ -27,8 +27,8 @@ final class BreathingMeters {
     private static final int LUNGS_SIZE = 64;
     private static final int AIR_CAPTION_TOP = 73;
     private static final int QI_CAPTION_TOP = 8;
-    /** 纳入量、相态明细、摄入倍率三行的高度。 */
-    private static final int QI_SUMMARY_HEIGHT = 35;
+    /** 纳入量、相态明细、五行明细（五行都有时折成三行）、摄入倍率，一共六行的高度。 */
+    private static final int QI_SUMMARY_HEIGHT = 62;
     private static final int EMBLEM_MARGIN = 6;
     /** 窄窗口里余力条占到左边，徽记挪到余力条下面。 */
     private static final int EMBLEM_COMPACT_TOP = 38;
@@ -250,6 +250,12 @@ final class BreathingMeters {
             if (phases.isPresent()) {
                 context.text(font, font.plainSubstrByWidth(phases.get(), width), x, nextLine,
                         MeridianTheme.color(ThemeTokens.MUTED_TEXT), false /* shadow */);
+                nextLine += font.lineHeight;
+            }
+            // 吐纳留下了本属性的真元时，再写「其中火行 0.05」；五行多了一行排不下就折行。
+            for (String elements : StoredElementCaption.lines(breath, font::width, width)) {
+                context.text(font, elements, x, nextLine, MeridianTheme.color(ThemeTokens.MUTED_TEXT),
+                        false /* shadow */);
                 nextLine += font.lineHeight;
             }
             // 药效改了肺的摄入时，再下一行写倍率：变强用进度条的颜色，变弱用错误色。

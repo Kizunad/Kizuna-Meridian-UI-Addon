@@ -262,3 +262,54 @@ tasks.named('runCodexTest') {
         }
     }
 }
+
+
+// 吐纳攒五行真元在真实完整装配客户端里连拍：到下界开正式吐纳窗口自动吐纳 5 分钟，测试入口不进入发行 JAR。
+sourceSets {
+    breathTest {
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+    }
+}
+loom {
+    mods {
+        meridian_ui_breath_test { sourceSet sourceSets.breathTest }
+    }
+    runs {
+        breathElementTest {
+            client()
+            source sourceSets.breathTest
+            runDir 'build/breath-element-test'
+            programArgs '--quickPlaySingleplayer', 'breath-element-test', '--width', '1280', '--height', '960'
+        }
+    }
+}
+// 每次都把存档换成干净的模板（Sync 会删掉上一次留下的文件）：只覆盖不删的话，世界时钟回到模板的零点，
+// 上一次存下的身体和环境窗口却还在、落在「未来」，吐纳的每一口都会被拒，纳入一直是 0。
+tasks.register('prepareBreathElementWorld', Sync) {
+    from new File(kizunaWorkspace.directory('progression'), 'fabric/build/gametest/world')
+    into layout.buildDirectory.dir('breath-element-test/saves/breath-element-test')
+    exclude 'session.lock'
+}
+tasks.named('runBreathElementTest') {
+    dependsOn tasks.named('prepareBreathElementWorld')
+    def report = layout.buildDirectory.file('breath-element-results.txt')
+    def shots = layout.buildDirectory.dir('breath-element-test/screenshots')
+    doFirst {
+        report.get().asFile.text = 'success=false\n'
+        // 上一次的截图不留，免得张数对不上。
+        shots.get().asFile.deleteDir()
+        def options = layout.buildDirectory.file('breath-element-test/options.txt').get().asFile
+        options.parentFile.mkdirs()
+        options.text = 'onboardAccessibility:false\nlang:zh_cn\nguiScale:2\n'
+        // 首次吐纳的操作指引会挡住开始按钮，这里当作已经看过。
+        def tutorial = layout.buildDirectory.file('breath-element-test/config/meridian-breathing-tutorial.txt').get().asFile
+        tutorial.parentFile.mkdirs()
+        tutorial.text = '手动吐纳操作指引已读\n'
+    }
+    doLast {
+        if (!report.get().asFile.text.startsWith('success=true')) {
+            throw new GradleException("吐纳攒五行真元客户端验收失败：${report.get().asFile}")
+        }
+    }
+}
