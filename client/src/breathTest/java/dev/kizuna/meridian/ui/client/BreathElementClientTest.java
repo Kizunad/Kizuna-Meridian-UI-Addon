@@ -1,19 +1,12 @@
 package dev.kizuna.meridian.ui.client;
 
-import dev.kizuna.inventoryui.client.ClientModule;
 import dev.kizuna.inventoryui.client.InventoryUiClient;
 import dev.kizuna.inventoryui.window.UiWindowManager.WindowState;
 import dev.kizuna.meridian.progression.client.ClientProgression;
 import dev.kizuna.meridian.protocol.pb.GatheringMessages.GatheringView;
-import io.wispforest.owo.ui.core.UIComponent;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.Screenshot;
-import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.client.input.MouseButtonInfo;
-import net.minecraft.server.permissions.LevelBasedPermissionSet;
 import net.minecraft.world.level.Level;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -64,8 +57,10 @@ public final class BreathElementClientTest implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        // 测试入口只在专用运行任务中加载，失败也写报告并退出。
-        ClientTickEvents.END_CLIENT_TICK.register(this::tick);
+        // 测试入口只在专用运行任务中加载，失败也写报告并退出；点的是别的场景时不动手。
+        if (BreathClipTools.selected("element")) {
+            ClientTickEvents.END_CLIENT_TICK.register(this::tick);
+        }
     }
 
     private void tick(Minecraft client) {
@@ -93,11 +88,10 @@ public final class BreathElementClientTest implements ClientModInitializer {
 
     private void prepare(Minecraft client) {
         // 用正式命令解锁、开全脉、换创造，再传到下界。
-        module = FabricLoader.getInstance().getEntrypoints("kizuna_inventory_ui", ClientModule.class).stream()
-                .filter(BodyUiModule.class::isInstance).map(BodyUiModule.class::cast).findFirst().orElseThrow();
+        module = BreathClipTools.module();
         client.options.guiScale().set(GUI_SCALE);
         client.resizeGui();
-        command = run(client, SETUP);
+        command = BreathClipTools.run(client, SETUP);
         next(Stage.ARRIVE);
     }
 
@@ -108,7 +102,7 @@ public final class BreathElementClientTest implements ClientModInitializer {
             return;
         }
         command.join();
-        command = run(client, ROOM);
+        command = BreathClipTools.run(client, ROOM);
         next(Stage.OPEN);
     }
 
@@ -134,9 +128,9 @@ public final class BreathElementClientTest implements ClientModInitializer {
     private void start(Minecraft client) {
         // 和玩家一样：先勾「自动吐纳」，再点开始；等服务端确认吐纳开始了再开拍。
         if (ticks - stageTick == 1) {
-            click("breathing-automatic");
+            BreathClipTools.click(module, "breathing-automatic");
         } else if (ticks - stageTick == SETTLE_TICKS / 2) {
-            click("breathing-start");
+            BreathClipTools.click(module, "breathing-start");
         }
         if (ticks - stageTick < SETTLE_TICKS) {
             return;
@@ -182,26 +176,6 @@ public final class BreathElementClientTest implements ClientModInitializer {
                 breath.getFailure(), breath.getStatus(), view.getEnvironment().getConcentrationPerBlock(), localFire);
     }
 
-    private void click(String id) {
-        // 用真实的鼠标按下事件点正式组件。
-        UIComponent target = module.cultivationPanel().root().childById(UIComponent.class, id);
-        boolean handled = target.onMouseDown(new MouseButtonEvent(target.x() + 4, target.y() + 4,
-                new MouseButtonInfo(0, 0)), false);
-        checkState(handled, "点 " + id + " 没有反应");
-    }
-
-    private static CompletableFuture<Void> run(Minecraft client, List<String> commands) {
-        // 在整合服的线程上以这名玩家、管理员权限执行。
-        var server = client.getSingleplayerServer();
-        var playerId = client.player.getUUID();
-        return CompletableFuture.runAsync(() -> {
-            var player = server.getPlayerList().getPlayer(playerId);
-            var source = player.createCommandSourceStack().withPermission(LevelBasedPermissionSet.OWNER)
-                    .withSuppressedOutput();
-            commands.forEach(line -> server.getCommands().performPrefixedCommand(source, line));
-        }, server);
-    }
-
     private void next(Stage next) {
         // 记录阶段起点，为渲染和网络响应留出真实 tick。
         stage = next;
@@ -209,8 +183,8 @@ public final class BreathElementClientTest implements ClientModInitializer {
     }
 
     private void capture(Minecraft client, String name) {
-        // 保存帧缓冲原图。
-        Screenshot.grab(client.gameDirectory, name, client.gameRenderer.mainRenderTarget(), 1, message -> { });
+        // 拍一张，记张数。
+        BreathClipTools.capture(client, name);
         screenshots++;
     }
 

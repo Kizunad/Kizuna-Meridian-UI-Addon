@@ -2,6 +2,7 @@ package dev.kizuna.meridian.ui.client;
 
 import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathingView;
+import dev.kizuna.meridian.protocol.pb.GatheringMessages.GatheringEnvironment;
 import dev.kizuna.meridian.protocol.pb.GatheringMessages.GatheringView;
 import io.wispforest.owo.ui.base.BaseUIComponent;
 import io.wispforest.owo.ui.container.FlowLayout;
@@ -10,12 +11,14 @@ import io.wispforest.owo.ui.core.Insets;
 import io.wispforest.owo.ui.core.OwoUIGraphics;
 import io.wispforest.owo.ui.core.Positioning;
 import io.wispforest.owo.ui.core.Sizing;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.ARGB;
+import net.minecraft.util.Util;
 import dev.kizuna.inventoryui.theme.ThemeTokens;
 
 /** 场景内的资源控件；每个控件独立命中，空白处仍交给三维相机与气息操作。 */
@@ -27,6 +30,8 @@ final class BreathingMeters {
     private static final int LUNGS_SIZE = 64;
     private static final int AIR_CAPTION_TOP = 73;
     private static final int QI_CAPTION_TOP = 8;
+    /** 只放得下「纳入 .. 真元」那一行时的高度。 */
+    private static final int QI_CAPTION_HEIGHT = 17;
     /** 纳入量、相态明细、五行明细（五行都有时折成三行）、摄入倍率，一共六行的高度。 */
     private static final int QI_SUMMARY_HEIGHT = 62;
     private static final int EMBLEM_MARGIN = 6;
@@ -37,6 +42,21 @@ final class BreathingMeters {
     private static final int RESERVE_HEIGHT = 4;
     private static final int STOP_OVERHANG = 3;
     private static final int FOOTER_CLEARANCE = 28;
+    /** 余力条的下沿：上边距 12、高 24。 */
+    private static final int RESERVE_BOTTOM = 36;
+    /** 受阻原因紧贴在余力条下面，留 4。 */
+    private static final int NOTICE_TOP = RESERVE_BOTTOM + 4;
+    /** 窄窗口里受阻原因和左边的徽记、右边的纳入量各隔这么远。 */
+    private static final int NOTICE_GAP = 4;
+    /** 纳入量那一块和余力条之间至少留这么多。 */
+    private static final int QI_GAP = 2;
+    /** 窄窗口里纳入量抬到右下按钮上方；宽窗口贴着底部提示。 */
+    private static final int QI_COMPACT_BOTTOM = 88;
+    private static final int QI_COMPACT_WIDTH = 128;
+    private static final int QI_WIDTH = 136;
+    private static final int QI_COMPACT_RIGHT = 6;
+    /** 受阻原因最多两行字。 */
+    private static final int NOTICE_HEIGHT = 18;
     private static final double NANOS_PER_SECOND = 1_000_000_000.0;
     private static final double MAX_FRAME_SECONDS = 0.1;
     private static final double AIR_SMOOTHING_RATE = 14;
@@ -47,14 +67,20 @@ final class BreathingMeters {
     private final ReserveGauge reserve = new ReserveGauge();
     private final QiSummary qi = new QiSummary();
     private final EnvironmentEmblem emblem = new EnvironmentEmblem();
+    private final RejectionNotice notice = new RejectionNotice();
     private final ActionRow action;
     private BreathingView breath = BreathingView.getDefaultInstance();
+    private String requestError = "";
+    private final IntakeStall stall = new IntakeStall();
+    private GatheringEnvironment environment = GatheringEnvironment.getDefaultInstance();
 
     BreathingMeters(FlowLayout scene, ActionRow action) {
         // 相对场景四边定位，窗口缩放时仍保持顶部余力、左下空气和右下纳入量。
         this.action = action;
         reserve.positioning(Positioning.relative(50, 0));
         reserve.margins(Insets.top(12));
+        notice.positioning(Positioning.relative(50, 0));
+        notice.margins(Insets.top(NOTICE_TOP));
         air.positioning(Positioning.relative(0, 100));
         air.margins(Insets.of(0, FOOTER_CLEARANCE, 12, 0));
         qi.positioning(Positioning.relative(100, 100));
@@ -68,7 +94,7 @@ final class BreathingMeters {
         // 灵气徽记放在场景左上角，不和顶上的余力条、底下的肺和纳入量争位置。
         emblem.positioning(Positioning.relative(0, 0));
         emblem.margins(Insets.of(EMBLEM_MARGIN, 0, EMBLEM_MARGIN, 0));
-        for (UIComponent control : List.of(reserve, emblem, air, action, qi)) {
+        for (UIComponent control : List.of(reserve, notice, emblem, air, action, qi)) {
             scene.child(control);
         }
     }
@@ -78,18 +104,41 @@ final class BreathingMeters {
         boolean compact = width < COMPACT_WIDTH;
         air.sizing(Sizing.fixed(compact ? 72 : 80), Sizing.fixed(84));
         air.margins(Insets.of(0, FOOTER_CLEARANCE, compact ? 6 : 12, 0));
-        qi.sizing(Sizing.fixed(compact ? 128 : 136), Sizing.fixed(QI_SUMMARY_HEIGHT));
-        qi.margins(Insets.of(0, compact ? 88 : FOOTER_CLEARANCE, 0, compact ? 6 : 12));
+        // 矮窗口里纳入量那一块不能顶到余力条：高度收到放得下的那么多（至少留「纳入」那一行），放不下的明细行不画。
+        int qiBottom = compact ? QI_COMPACT_BOTTOM : FOOTER_CLEARANCE;
+        int qiRoom = height - qiBottom - RESERVE_BOTTOM - QI_GAP;
+        int qiHeight = Math.max(QI_CAPTION_HEIGHT, Math.min(QI_SUMMARY_HEIGHT, qiRoom));
+        qi.sizing(Sizing.fixed(compact ? QI_COMPACT_WIDTH : QI_WIDTH), Sizing.fixed(qiHeight));
+        qi.margins(Insets.of(0, qiBottom, 0, compact ? QI_COMPACT_RIGHT : 12));
         action.sizing(Sizing.fixed(compact ? 104 : 120), Sizing.fixed(compact ? 26 : 30));
         reserve.horizontalSizing(Sizing.fill(compact ? 78 : 64));
+        arrangeNotice(width, compact);
         emblem.margins(Insets.of(compact ? EMBLEM_COMPACT_TOP : EMBLEM_MARGIN, 0, EMBLEM_MARGIN, 0));
+    }
+
+    private void arrangeNotice(int width, boolean compact) {
+        // 宽窗口居中写在余力条下面。窄窗口里余力条下面左边是徽记、右边是抬上来的纳入量，原因写在两者中间。
+        if (!compact) {
+            notice.positioning(Positioning.relative(50, 0));
+            notice.margins(Insets.top(NOTICE_TOP));
+            notice.horizontalSizing(Sizing.fill(64));
+            return;
+        }
+        int left = EMBLEM_MARGIN + EnvironmentEmblem.SIZE + NOTICE_GAP;
+        int right = QI_COMPACT_WIDTH + QI_COMPACT_RIGHT + NOTICE_GAP;
+        notice.positioning(Positioning.absolute(left, NOTICE_TOP));
+        notice.margins(Insets.none());
+        notice.horizontalSizing(Sizing.fixed(Math.max(0, width - left - right)));
     }
 
     void update(GatheringView view, String error) {
         // 快照到达时刷新提示与总账，逐帧仅绘制空气插值，不重复汇总身体明细。
         emblem.update(view != null && view.hasEnvironment() ? view.getEnvironment() : null);
+        requestError = error;
         if (view == null || !view.hasBreathing()) {
             breath = BreathingView.getDefaultInstance();
+            environment = GatheringEnvironment.getDefaultInstance();
+            stall.observe(breath, Util.getMillis());
             action.tooltip(net.minecraft.network.chat.Component.literal(error.isEmpty() ? UiErrors.BREATHING_UNAVAILABLE : error));
             air.tooltip(List.<net.minecraft.network.chat.Component>of());
             reserve.tooltip(List.<net.minecraft.network.chat.Component>of());
@@ -97,6 +146,8 @@ final class BreathingMeters {
             return;
         }
         breath = view.getBreathing();
+        environment = view.getEnvironment();
+        stall.observe(breath, Util.getMillis());
         air.tooltip(List.of(net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "空气 %.1f / %.1f L",
                 breath.getAirLiters(), breath.getCapacityLiters()))));
         double remainingRatio = breath.getAutomatic() ? breath.getStaminaRatio()
@@ -230,10 +281,48 @@ final class BreathingMeters {
         }
     }
 
+    /** 余力条下面的受阻原因：只画字、不接鼠标，这块地方照旧交给相机和气息操作。 */
+    final class RejectionNotice extends BaseUIComponent {
+        RejectionNotice() {
+            // 占两行字的位置；没受阻时什么都不画。
+            sizing(Sizing.fill(64), Sizing.fixed(NOTICE_HEIGHT));
+            id("breathing-rejection");
+        }
+
+        @Override
+        public boolean isInBoundingBox(double x, double y) {
+            // 不参与命中，鼠标落在这里和落在场景空白处一样。
+            return false;
+        }
+
+        List<String> lines() {
+            // 这一刻该写的几行：请求被拒写回执那句，一直纳不进写原因，都没有就是空的。
+            var font = Minecraft.getInstance().font;
+            long now = Util.getMillis();
+            String reason = "";
+            if (stall.stalled(now)) {
+                reason = IntakeRejection.reason(stall.failure(now), environment);
+            }
+            return IntakeRejection.lines(requestError, reason, font::width, width);
+        }
+
+        @Override
+        public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
+            // 每行居中，用错误色；怎么办在按钮和纳入量的悬浮提示里。
+            var font = Minecraft.getInstance().font;
+            int top = y;
+            for (String line : lines()) {
+                context.text(font, line, x + (width - font.width(line)) / 2, top,
+                        MeridianTheme.color(ThemeTokens.INPUT_ERROR), false /* shadow */);
+                top += font.lineHeight;
+            }
+        }
+    }
+
     private final class QiSummary extends BaseUIComponent {
         QiSummary() {
             // 整个统计区域都能命中总账提示。
-            sizing(Sizing.fixed(136), Sizing.fixed(QI_SUMMARY_HEIGHT));
+            sizing(Sizing.fixed(QI_WIDTH), Sizing.fixed(QI_SUMMARY_HEIGHT));
             id("breathing-qi");
         }
 
@@ -244,27 +333,29 @@ final class BreathingMeters {
             String caption = String.format(Locale.ROOT, "纳入 %.2f 真元", breath.getStoredQi());
             context.text(font, font.plainSubstrByWidth(caption, width), x, y + QI_CAPTION_TOP,
                     MeridianTheme.color(ThemeTokens.TEXT), false /* shadow */);
-            // 真炁吐纳有气态时，紧贴在纳入量下面分开写游离、气态各纳入多少。
+            // 明细行：真炁吐纳有气态时先分开写游离、气态各纳入多少；吐纳留下了本属性的真元时，
+            // 再写「其中火行 0.05」，五行多了一行排不下就折行。
             int nextLine = y + QI_CAPTION_TOP + font.lineHeight;
-            var phases = StoredPhaseCaption.of(breath);
-            if (phases.isPresent()) {
-                context.text(font, font.plainSubstrByWidth(phases.get(), width), x, nextLine,
-                        MeridianTheme.color(ThemeTokens.MUTED_TEXT), false /* shadow */);
-                nextLine += font.lineHeight;
-            }
-            // 吐纳留下了本属性的真元时，再写「其中火行 0.05」；五行多了一行排不下就折行。
-            for (String elements : StoredElementCaption.lines(breath, font::width, width)) {
-                context.text(font, elements, x, nextLine, MeridianTheme.color(ThemeTokens.MUTED_TEXT),
+            var details = new ArrayList<String>();
+            StoredPhaseCaption.of(breath).ifPresent(phases -> details.add(font.plainSubstrByWidth(phases, width)));
+            details.addAll(StoredElementCaption.lines(breath, font::width, width));
+            // 矮窗口里这一块被收矮了：从上往下画，画不下的明细行不画，悬浮提示里照样有全部数字。
+            int bottom = y + height;
+            for (String detail : details) {
+                if (nextLine + font.lineHeight > bottom) {
+                    return;
+                }
+                context.text(font, detail, x, nextLine, MeridianTheme.color(ThemeTokens.MUTED_TEXT),
                         false /* shadow */);
                 nextLine += font.lineHeight;
             }
             // 药效改了肺的摄入时，再下一行写倍率：变强用进度条的颜色，变弱用错误色。
-            int intakeTop = nextLine;
-            IntakeCaption.of(breath).ifPresent(intake -> {
-                String token = intake.boosted() ? ThemeTokens.PROGRESS_FILL : ThemeTokens.INPUT_ERROR;
-                context.text(font, font.plainSubstrByWidth(intake.text(), width), x, intakeTop,
+            var intake = IntakeCaption.of(breath);
+            if (intake.isPresent() && nextLine + font.lineHeight <= bottom) {
+                String token = intake.get().boosted() ? ThemeTokens.PROGRESS_FILL : ThemeTokens.INPUT_ERROR;
+                context.text(font, font.plainSubstrByWidth(intake.get().text(), width), x, nextLine,
                         MeridianTheme.color(token), false /* shadow */);
-            });
+            }
         }
     }
 }
