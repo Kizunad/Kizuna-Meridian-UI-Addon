@@ -14,6 +14,16 @@
 - 失败码复用框架 Protobuf，界面解释和异常文案集中管理，不以解析异常字符串驱动业务。
 - 只在状态变化或请求结果到达时更新模型；逐帧插值只影响展示。身份、时间、权限和最终成功结果由可信宿主决定。
 - 保留必要整体 Test，覆盖协议、关键交互和模块边界；临时验证通过后清理。不为只有工程骨架的模块添加占位测试。
-- 文档唯一编辑来源为 `docs/wiki/`，README 只保留入口。行为和公开契约变化同步更新文档。交付前运行 `./gradlew build` 与 `python3 "scripts/check_docs.py"`。
+- 文档唯一编辑来源为 `docs/wiki/`，README 只保留入口。行为和公开契约变化同步更新文档。交付前运行 `python3 "scripts/check_docs.py"`。
 - 用 patch/Edit 修改文件，命令路径加双引号。保留用户修改，不强推、不改历史，提交、推送和发布按用户授权执行。
 - PolyForm Noncommercial 1.0.0，保留第三方许可。明确区分工程骨架、可构建库和已通过游戏宿主验证的模组；未发布版本不编造 Maven 坐标。
+
+## 构建和测试
+
+构建、测试一律走工作区的 `kz`（`~/Code/Kizuna-remote-session/scripts/kz`），不直接运行 `./gradlew`。细则以 `~/Code/Kizuna-remote-session/handoff/codex-worker-rules.md` 为准，动手前先读。
+
+- 单测、构建和服务端 GameTest：`kz test ~/Code/<本仓的 worktree>`
+- 要带上别的仓的 worktree 一起测：每个加一次 `--with ~/Code/<那个仓的 worktree>`
+- 客户端测试：`kz client ~/Code/<本仓的 worktree>` 列出有哪些项，`kz client ~/Code/<本仓的 worktree> <项>` 跑其中一项
+- 要自己写 Gradle 参数时：`kz gradle ~/Code/<本仓的 worktree> -- <参数>`
+- 不提交、不推送；在自己的 worktree（`~/Code/wt-*`）里改，不改主目录。
