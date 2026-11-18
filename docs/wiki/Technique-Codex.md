@@ -1,5 +1,8 @@
 # 功法谱书页
 
+客户端入口 `CodexClient` 同时将 `TechniqueEffectTooltips.lines` 登记到界面框架的 `StatusNotes`，
+让功法组织状态的灰字说明显示在统一状态图标的效果名和时间下面。
+
 功法谱是功法库登记的实物书 `meridian_technique:technique_codex`。右键时功法库在客户端发出
 `TechniqueCodex.OPEN`，本附属的客户端入口 `CodexClient` 在这个事件上翻开 `CodexScreen`。
 书页是独立 Screen，不进 Inventory UI 工作台：屏幕正中两页羊皮纸，没有窗口外框和顶栏按钮，Esc 合上。
