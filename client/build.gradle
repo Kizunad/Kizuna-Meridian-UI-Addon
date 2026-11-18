@@ -81,6 +81,10 @@ tasks.named("runInnerVisionTest") {
     def report = layout.buildDirectory.file("inner-vision-results.txt")
     doFirst {
         report.get().asFile.text = "success=false\n"
+        // Quick Play 必须能直接进入隔离存档；首次启动引导在玩家加入前等待人工确认。
+        def options = layout.buildDirectory.file("inner-vision-test/options.txt").get().asFile
+        options.parentFile.mkdirs()
+        options.text = 'onboardAccessibility:false\n'
     }
     doLast {
         if (!report.get().asFile.text.startsWith("success=true")) {

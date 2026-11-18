@@ -30,6 +30,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.EntitySpawnReason;
@@ -114,6 +115,7 @@ public final class StanceSettingsClientTest implements ClientModInitializer {
     private Path savedConfig;
     private boolean reconnectPending;
     private boolean rejoinStarted;
+    private long previousGeneration;
     private CombatViewSettings persistedView;
     private final Minecraft game = Minecraft.getInstance();
 
@@ -156,6 +158,10 @@ public final class StanceSettingsClientTest implements ClientModInitializer {
 
     private boolean prepare() throws Exception {
         // 测试平台、装备与目标来自真实服务端实体，避免独立预览模型代替游戏世界。
+        // 接收世界画面负责确认加载完成；提前把它关掉会让本地玩家跳过实体 tick。
+        if (!game.player.connection.hasClientLoaded()) {
+            return false;
+        }
         Files.createDirectories(SCREENS);
         var fromDisk = new CombatConfigFile(configPath()).load();
         var startup = CombatSettingsAccess.snapshot();
@@ -443,6 +449,12 @@ public final class StanceSettingsClientTest implements ClientModInitializer {
         // 恢复选靶场景的相机方向，后续射线仍命中同一个真实服务端目标。
         checkState(game.player.position().distanceTo(new Vec3(0, PLAYER_Y, 0)) < EPSILON);
         controller().view().restoreCamera(cameraAngles);
+        // 选靶读取最近一次渲染的相机；同一帧内可连续执行多个客户端 tick。
+        var rendered = game.gameRenderer.mainCamera();
+        if (Math.abs(CombatViewMath.wrapYaw(rendered.yRot() - cameraAngles.yaw())) > EPSILON
+                || Math.abs(rendered.xRot() - cameraAngles.pitch()) > EPSILON) {
+            return false;
+        }
         tap(GLFW.GLFW_KEY_F8);
         return true;
     }
@@ -453,7 +465,9 @@ public final class StanceSettingsClientTest implements ClientModInitializer {
         var player = game.player;
         checkState(Math.abs(CombatViewMath.wrapYaw(player.getYRot() - camera.yaw())) < EPSILON);
         checkState(Math.abs(player.getXRot() - camera.pitch()) < EPSILON);
-        checkState(Math.abs(CombatViewMath.wrapYaw(player.getYHeadRot() - camera.yaw())) < EPSILON);
+        float headYaw = player.getYHeadRot();
+        checkState(Math.abs(CombatViewMath.wrapYaw(headYaw - camera.yaw())) < EPSILON,
+                "锁定视角：头部朝向 %s 与镜头 %s 不同", headYaw, camera.yaw());
         checkState(Math.abs(CombatViewMath.wrapYaw(player.yBodyRot - camera.yaw())) < EPSILON);
     }
 
@@ -756,7 +770,10 @@ public final class StanceSettingsClientTest implements ClientModInitializer {
         MeridianSettings.open(CombatSettingsProvider.ID);
         settingsRoot = settingsRoot();
         settingsRoot.childById(TextBoxComponent.class, "combat-radius").text("27");
-        game.disconnectWithSavingScreen();
+        var windows = InventoryUiClient.runtime().workspace().windows();
+        previousGeneration = windows.snapshot().getFirst().key().connectionGeneration();
+        // 与暂停菜单共用退出入口，先关闭网络连接，再等待整合服保存。
+        game.disconnectFromWorld(ClientLevel.DEFAULT_QUIT_MESSAGE);
         reconnectPending = true;
         stageTick = ticks;
         return false;
@@ -768,8 +785,12 @@ public final class StanceSettingsClientTest implements ClientModInitializer {
             if (ticks - stageTick < STEP_TICKS || game.getSingleplayerServer() != null) {
                 return;
             }
-            checkState(MeridianSettings.open().status() == MeridianSettings.Status.UNAVAILABLE);
-            checkState(InventoryUiClient.runtime().workspace().windows().snapshot().isEmpty());
+            var status = MeridianSettings.open().status();
+            checkState(status == MeridianSettings.Status.UNAVAILABLE,
+                    "断线清理：设置入口仍返回 %s", status);
+            var windows = InventoryUiClient.runtime().workspace().windows().snapshot();
+            checkState(windows.isEmpty(), "断线清理：工作区仍有窗口 %s",
+                    windows.stream().map(window -> window.key()).toList());
             game.createWorldOpenFlows().openWorld("stance-settings-test", () -> { });
             rejoinStarted = true;
             return;
@@ -777,8 +798,14 @@ public final class StanceSettingsClientTest implements ClientModInitializer {
         if (game.player == null || game.gui.overlay() != null) {
             return;
         }
-        checkState(CombatSettingsAccess.snapshot().view().equals(persistedView));
+        var reloadedView = CombatSettingsAccess.snapshot().view();
+        checkState(reloadedView.equals(persistedView),
+                "重进存档：已保存镜头设置由 %s 变为 %s", persistedView, reloadedView);
         MeridianSettings.open(CombatSettingsProvider.ID);
+        var windows = InventoryUiClient.runtime().workspace().windows();
+        long generation = windows.snapshot().getFirst().key().connectionGeneration();
+        checkState(generation == previousGeneration + 1, "重进存档：工作区连接代数由 %s 变为 %s",
+                previousGeneration, generation);
         var radius = settingsRoot().childById(TextBoxComponent.class, "combat-radius");
         checkState(!radius.getValue().equals("27"), "断线保留了未保存草稿");
         evidence.add("disconnect/rejoin/persisted-camera/discard-draft PASS");
