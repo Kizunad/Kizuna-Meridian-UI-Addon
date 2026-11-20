@@ -102,7 +102,7 @@ public final class BodyUiModule implements ClientModule {
         bindings.featureAccess("meridian_ui:meridian_operation", meridians::canOpenOperation);
         // 菜单与直接打开共用各自残卷权限；具体练习门槛由必装生物扩展解释。
         bindings.featureAccess("meridian_ui:cultivation", ClientProgression::canGather);
-        bindings.featureAccess(EnvironmentEmblem.DETAIL_FEATURE, ClientProgression::canGather);
+        bindings.featureAccess(EnvironmentEmblem.DETAIL_FEATURE, ClientProgression::canGatherDetails);
         bindings.featureAccess("meridian_ui:practice", () -> ClientProgression.canCultivate()
                 && dev.kizuna.meridian.ui.api.MeridianSceneExtension.required().lockedReason().isEmpty());
         ClientProgression.onChanged(this::progressChanged);
@@ -164,8 +164,7 @@ public final class BodyUiModule implements ClientModule {
             return opened;
         });
         bindings.window("meridian_ui:cultivation_window", (runtime, window) -> {
-            // 内观模型仍由生物附属提供；没有身体时只显示等待状态。
-            ClientProgression.requireCultivation();
+            // 出身授权可以直接打开吐纳；普通入口仍由下面的锁定态提示缺少阅读事实。
             WindowKey openedKey = window.key();
             if (!ClientProgression.canGather()) {
                 // 吐纳入口仍在修炼页，窗口只给锁和找卷提示；记下锁定态，读完后关闭以便重开出真实场景。
