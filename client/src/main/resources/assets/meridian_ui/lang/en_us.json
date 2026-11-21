@@ -1,4 +1,7 @@
 {
+  "meridian_ui.compact.breath": "Breathing",
+  "meridian_ui.compact.meridians": "Meridians",
+  "meridian_ui.compact.overview": "Overview",
   "settings.meridian_ui.combat_stance": "Combat Stance",
   "meridian_ui.data.tab.scene": "Meridians",
   "meridian_ui.data.tab.data": "Data",

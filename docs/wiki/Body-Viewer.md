@@ -70,3 +70,14 @@
 窗口初始层由内容包的 `default_layer_id` 决定，Human 为只显示体表的 `surface`；整个窗口须右键使用《炁脉札记》和内观残卷并收到权威同步后才能打开，无须看完。当前窗口为只读展示，不发送身体改造或修炼命令。
 
 新增隔离客户端验收：先在 Progression 运行 `./gradlew :fabric:runGametest` 准备测试世界，再在本仓运行 `env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 ALSOFT_DRIVERS=null xvfb-run -a -s "-screen 0 1280x960x24" ./gradlew :client:runInnerVisionTest`。测试真实菜单可见性、LockedNotice、物品右键与正文资源、解锁人体面板、骨架层、单卷重置关窗和重开锁定；报告为 `client/build/inner-vision-results.txt`，截图保留在测试运行目录。
+
+## 新版界面里的检视
+
+界面框架有两版界面（见 Inventory UI 的「模块与窗口 · 两版界面」）。上面写的是旧版；切到新版后，功能 ID 不变，窗口这样拆：
+
+- `meridian_ui:body` 是「体表」，另有 `meridian_ui:muscles`「肌肉」、`meridian_ui:organs`「器官」两个窗口，各自只显示自己那一组部位和图层；首选 194×174、下限 150×120。
+- 体表窗口里的「概况」勾选打开一行独立的概况小窗（`meridian_ui:overview`），有自己的锁和位置。
+- 体表、肌肉、器官、概况、吐纳、中焦、经脉七个窗口可以收成小窗并锁到游戏画面，摘要由 `MeridianSceneExtension.compactBody`／`compactPractice` 和本仓的 `MeridianSummaries` 提供；没拖过时主列自上而下是吐纳、中焦、体表、经脉、概况，肌肉和器官在右边一列。
+- 吐纳、中焦、经脉、此地灵气、经脉操作、战斗槽和设置的展开窗在新版里暂时沿用旧版的内容排版和尺寸，只换外框。
+
+身体快照、吐纳回执和内观订阅两版共用，都在 `BodyUiModule`；新版多出来的窗口和摘要在 `ModernBodyWindows`，由 `BodyUiModule.registerModern` 登记。

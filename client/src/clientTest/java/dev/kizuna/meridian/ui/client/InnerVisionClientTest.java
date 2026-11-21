@@ -44,7 +44,11 @@ public final class InnerVisionClientTest implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         // 测试入口只在专用运行任务中加载，失败也写报告并退出。
-        ClientTickEvents.END_CLIENT_TICK.register(this::tick);
+        if (System.getProperty("content.width") != null) {
+            new ContentWindowJourney().register();
+        } else {
+            ClientTickEvents.END_CLIENT_TICK.register(this::tick);
+        }
     }
 
     private void tick(Minecraft client) {
@@ -97,6 +101,7 @@ public final class InnerVisionClientTest implements ClientModInitializer {
         checkState(runtime.workspace().features("").stream()
                         .anyMatch(feature -> feature.id().equals("meridian_ui:body")),
                 "未解锁检视入口从菜单消失");
+        runtime.uiVersion(dev.kizuna.inventoryui.workspace.UiVersion.CLASSIC);
         runtime.openWorkspace();
         window = runtime.open("meridian_ui:body", null);
         checkState(InspectionWindowProbe.content(window.key()) instanceof LockedNotice, "未解锁没有显示锁定卡");

@@ -122,6 +122,7 @@ public final class BreathRejectClientTest implements ClientModInitializer {
         command.join();
         var runtime = InventoryUiClient.runtime();
         runtime.motion(false /* enabled */);
+        runtime.uiVersion(dev.kizuna.inventoryui.workspace.UiVersion.CLASSIC);
         runtime.openWorkspace();
         window = runtime.open("meridian_ui:cultivation", null);
         next(after);

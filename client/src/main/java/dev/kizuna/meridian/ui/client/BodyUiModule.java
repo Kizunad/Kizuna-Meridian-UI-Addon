@@ -3,7 +3,9 @@ package dev.kizuna.meridian.ui.client;
 import dev.kizuna.inventoryui.client.ClientBindings;
 import dev.kizuna.inventoryui.client.ClientModule;
 import dev.kizuna.inventoryui.client.ClientRuntime;
+import dev.kizuna.inventoryui.client.RestoreStatus;
 import dev.kizuna.inventoryui.registry.FrameworkCatalog;
+import dev.kizuna.meridian.ui.api.InspectionSection;
 import dev.kizuna.inventoryui.window.UiWindowDefinition;
 import dev.kizuna.inventoryui.window.UiWindowManager.WindowKey;
 import dev.kizuna.inventoryui.window.UiWindowManager.WindowState;
@@ -33,6 +35,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.PictureInPictureRendererRegis
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 import java.io.IOException;
+import java.util.Optional;
 import java.util.Set;
 import java.util.List;
 import java.util.UUID;
@@ -63,6 +66,8 @@ public final class BodyUiModule implements ClientModule {
     private long breathSequence;
     private BreathControl queuedBreath;
     private final MeridianWindows meridians = new MeridianWindows(this::syncIntrospection);
+    private final ModernBodyWindows modern =
+            new ModernBodyWindows(this, this::requestIntrospection, this::syncIntrospection);
 
     @Override
     public FrameworkCatalog.Module definition() {
@@ -93,6 +98,17 @@ public final class BodyUiModule implements ClientModule {
                         220, 230, 290, 365, Set.of(UiWindowDefinition.Capability.WINDOW))),
                 new FrameworkCatalog.Feature("meridian_ui:meridian_operation", "经脉操作", "修炼",
                         "meridian_ui:body_icon", "meridian_ui:meridian_operation_window", false));
+    }
+
+    @Override
+    public Optional<FrameworkCatalog.Module> modernDefinition() {
+        return Optional.of(modern.definition());
+    }
+
+    @Override
+    public void registerModern(ClientBindings bindings) {
+        // 吐纳、此地灵气、经脉、中焦和经脉操作在新版里沿用 register 绑的窗口；这里只绑检视拆出的窗口和各窗口的摘要。
+        modern.register(bindings);
     }
 
     @Override
@@ -142,6 +158,7 @@ public final class BodyUiModule implements ClientModule {
             if (panel != null) {
                 panel.tick();
             }
+            modern.tick();
         });
         bindings.message(new UiWire.Contract<>(new UiMessageRouter.Contract<>("meridian_ui:body",
                 "meridian_ui:gathering_request", 1, UiMessageRouter.Direction.CLIENT_TO_SERVER,
@@ -233,7 +250,10 @@ public final class BodyUiModule implements ClientModule {
             if (!update.hasBody()) {
                 // 独立订阅回执不替换身体；拒绝后撤下内部窗口。
                 if (update.hasFailure()) {
+                    modern.introspectionReceipt(update.getRequestId(), RestoreStatus.DENIED);
                     revokeCultivation();
+                } else {
+                    modern.introspectionReceipt(update.getRequestId(), RestoreStatus.LIVE);
                 }
                 return;
             }
@@ -255,6 +275,9 @@ public final class BodyUiModule implements ClientModule {
             } else {
                 // 被拒绝的身体快照也不能替换当前身体的操作规则。
                 return;
+            }
+            if (update.getIntrospection() == introspectionRequested) {
+                modern.introspectionSnapshot();
             }
             if (update.hasOpening()) {
                 meridians.options(update.getOpening().getRulesList());
@@ -292,7 +315,7 @@ public final class BodyUiModule implements ClientModule {
         try (var stream = Minecraft.getInstance().getResourceManager().open(resource)) {
             BodyScene candidate = new BodyScene(stream.readNBytes(BodyScene.MAX_BYTES + 1));
             candidate.requireTemplate(snapshot);
-            if (panel != null || meridians.open() || (body != null && cultivationPanel != null)) {
+            if (panel != null || modern.open() || meridians.open() || (body != null && cultivationPanel != null)) {
                 throw UiErrors.invalid(UiErrors.WINDOW_OPEN);
             }
             scene = candidate;
@@ -320,6 +343,7 @@ public final class BodyUiModule implements ClientModule {
         if (panel != null) {
             panel.update(snapshot);
         }
+        modern.update(snapshot);
         body = snapshot;
         meridians.update(snapshot);
         if (gathering != null) {
@@ -386,6 +410,35 @@ public final class BodyUiModule implements ClientModule {
     public BodyPanel panel() {
         // 宿主可检查当前窗口，未打开时返回空。
         return panel;
+    }
+
+    /** 新版界面的体表窗口；未打开时返回空。 */
+    public ModernBodyPanel surfacePanel() {
+        return modern.panel(InspectionSection.SURFACE);
+    }
+
+    BodyScene scene() {
+        return scene;
+    }
+
+    ClientRuntime runtime() {
+        return runtime;
+    }
+
+    /** 协议已就绪，手里的身体就是宿主在这条连接上交付的那一具。 */
+    boolean hostBodyReady() {
+        return runtime != null && body != null && body.getId().equals(hostBodyId);
+    }
+
+    /** 替小窗发一次吐纳只读查询；回执按这个请求号交还，不占操作请求的回执位。 */
+    void inspectGathering(String requestId) {
+        var request = GatheringRequest.newBuilder()
+                .setProtocolVersion(1)
+                .setBodyId(body.getId())
+                .setRequestId(requestId)
+                .setInspect(InspectGathering.getDefaultInstance())
+                .build();
+        gatheringSender.accept(request);
     }
 
     public BodySnapshot snapshot() {
@@ -472,6 +525,10 @@ public final class BodyUiModule implements ClientModule {
                 || response.getProtocolVersion() != 1 || body == null) {
             return;
         }
+        if (modern.observingBreath(response.getRequestId())) {
+            receiveObservation(response);
+            return;
+        }
         boolean reply = response.getRequestId().equals(pendingRequest);
         if (reply) {
             pendingRequest = "";
@@ -499,6 +556,33 @@ public final class BodyUiModule implements ClientModule {
         if (pendingRequest.isEmpty() && queuedBreath != null) {
             controlBreathing(queuedBreath);
         }
+    }
+
+    private void receiveObservation(GatheringResponse response) {
+        // 小窗的只读查询：结果照常进入吐纳投影，但不清操作请求的等待，也不推动排队的吐纳输入。
+        if (response.hasFailure()) {
+            modern.breathReceipt(RestoreStatus.DENIED);
+            gatheringError = UiErrors.gatheringFailure(response.getFailure().getCode());
+            if (response.getFailure().getCode()
+                    == dev.kizuna.meridian.protocol.pb.MeridianMessages.FailureCode.ACCESS_DENIED) {
+                gathering = null;
+            }
+        } else if (response.hasView() && newerGathering(response.getView())) {
+            GatheringView view = response.getView();
+            breathSequence = Math.max(breathSequence, view.getBreathing().getSequence());
+            if (view.hasBody()) {
+                gathering = view;
+                update(view.getBody());
+            } else {
+                gathering = view.toBuilder()
+                        .setBody(body)
+                        .build();
+            }
+            if (view.hasBreathing()) {
+                modern.breathReceipt(RestoreStatus.LIVE);
+            }
+        }
+        showGathering();
     }
 
     private boolean newerGathering(GatheringView view) {
@@ -540,6 +624,10 @@ public final class BodyUiModule implements ClientModule {
 
     private void progressChanged() {
         // 进度是连接权威投影；重置通知立即清窗口与尚未发出的控制意图。
+        if (runtime != null) {
+            runtime.recheckRestores();
+            modern.progressChanged();
+        }
         if (runtime != null && bodyKey != null && ClientProgression.canInspect() == bodyLocked) {
             runtime.workspace().windows().close(bodyKey);
         }
@@ -568,11 +656,14 @@ public final class BodyUiModule implements ClientModule {
         if (panel != null) {
             panel.layer(scene.defaultLayerId());
         }
+        if (scene != null) {
+            modern.resetSurfaceLayer(scene.defaultLayerId());
+        }
     }
 
     private boolean wantsIntrospection() {
         // 内观视图带开脉规则和操作卡，只在经脉窗或操作窗开着、进度也允许内观时要。
-        return meridians.needsIntrospection() && ClientProgression.canInspect();
+        return (modern.wantsIntrospection() || meridians.needsIntrospection()) && ClientProgression.canInspect();
     }
 
     private void syncIntrospection() {
@@ -599,6 +690,7 @@ public final class BodyUiModule implements ClientModule {
                 .setBodyId(body.getId())
                 .setIntrospection(introspection)
                 .build();
+        modern.introspectionSent(request.getRequestId());
         ClientPlayNetworking.send(MeridianChannels.BODY_VIEW_REQUEST.payload(request.toByteArray()));
         introspectionRequested = introspection;
     }
@@ -623,6 +715,11 @@ public final class BodyUiModule implements ClientModule {
     private void clearBody() {
         // 未建立 Inventory UI 握手的连接也必须在 Fabric 断线时清除只读投影。
         // 订阅和构型随连接作废；先清掉身体再关窗，关窗回调见没有身体就不往断开的连接发订阅请求。
+        if (runtime != null) {
+            // 下面关窗是连接断开，不是玩家撤销；先告诉框架，新版锁着的小窗才会留到下次登录。
+            runtime.connectionClosing();
+        }
+        modern.clear();
         introspectionRequested = false;
         hostBodyId = "";
         structure = null;

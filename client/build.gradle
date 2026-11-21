@@ -85,6 +85,19 @@ tasks.named("runInnerVisionTest") {
         def options = layout.buildDirectory.file("inner-vision-test/options.txt").get().asFile
         options.parentFile.mkdirs()
         options.text = 'onboardAccessibility:false\n'
+        if (System.getProperty('content.width') != null) {
+            def preferences = layout.buildDirectory
+                    .file('inner-vision-test/config/kizuna-inventory-ui.json').get().asFile
+            preferences.parentFile.mkdirs()
+            preferences.text = groovy.json.JsonOutput.toJson([
+                    version: 1,
+                    pinnedWindows: [
+                            'meridian_ui:body_window',
+                            'meridian_ui:cultivation_window',
+                            'meridian_ui:practice_window'
+                    ]
+            ])
+        }
     }
     doLast {
         if (!report.get().asFile.text.startsWith("success=true")) {

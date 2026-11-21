@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<owo-ui>
+    <templates>
+        <body-panel>
+            <flow-layout direction="vertical">
+                <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+                <children>
+                    <label id="body-title"><text>检视</text><color>#FFE8D9AD</color></label>
+                    <scroll id="layers-scroll" direction="horizontal">
+                        <flow-layout id="layers" direction="ltr-text-flow">
+                            <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
+                            <gap>4</gap>
+                        </flow-layout>
+                        <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+                    </scroll>
+                    <flow-layout id="canvas" direction="vertical">
+                        <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+                    </flow-layout>
+                    <scroll id="information-scroll" direction="vertical">
+                        <flow-layout direction="vertical">
+                            <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
+                            <padding><right>5</right></padding>
+                            <children>
+                                <label id="information">
+                                    <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
+                                    <text>点击模型查看介绍与数值</text><color>#FFD3DFDB</color>
+                                </label>
+                            </children>
+                        </flow-layout>
+                        <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
+                    </scroll>
+                    <label id="body-hint"><text>左键选中 · 拖动 · 滚轮 · 中键复位</text><color>#FF92AFB0</color></label>
+                </children>
+            </flow-layout>
+        </body-panel>
+    </templates>
+</owo-ui>
