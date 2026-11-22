@@ -78,6 +78,7 @@
 - `meridian_ui:body` 是「体表」，另有 `meridian_ui:muscles`「肌肉」、`meridian_ui:organs`「器官」两个窗口，各自只显示自己那一组部位和图层；首选 194×174、下限 150×120。
 - 体表窗口里的「概况」勾选打开一行独立的概况小窗（`meridian_ui:overview`），有自己的锁和位置。
 - 体表、肌肉、器官、概况、吐纳、中焦、经脉七个窗口可以收成小窗并锁到游戏画面，摘要由 `MeridianSceneExtension.compactBody`／`compactPractice` 和本仓的 `MeridianSummaries` 提供；没拖过时主列自上而下是吐纳、中焦、体表、经脉、概况，肌肉和器官在右边一列。
+- 小窗摘要画在 `SummaryCanvas` 上：文字只有原字号一种大小，标签靠左、数值靠右，数字用 `CompactNumbers` 收短（过万写「万」）。`SummaryProbe` 是不出图的画布，用例用它核对文字有没有画出小窗、同一行有没有相叠。概况一行的宽度上限是 `MeridianSceneExtension.OVERVIEW_WIDTH`。
 - 吐纳、中焦、经脉、此地灵气、经脉操作、战斗槽和设置的展开窗在新版里暂时沿用旧版的内容排版和尺寸，只换外框。
 
 身体快照、吐纳回执和内观订阅两版共用，都在 `BodyUiModule`；新版多出来的窗口和摘要在 `ModernBodyWindows`，由 `BodyUiModule.registerModern` 登记。

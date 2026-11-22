@@ -2,29 +2,22 @@ package dev.kizuna.meridian.ui.client;
 
 import dev.kizuna.inventoryui.client.ClientRuntime;
 import dev.kizuna.inventoryui.client.CompactProvider;
+import dev.kizuna.inventoryui.client.CompactView;
 import dev.kizuna.meridian.ui.api.InspectionSection;
 import dev.kizuna.meridian.ui.api.MeridianSceneExtension;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.renderer.state.gui.GuiRenderState;
-import net.minecraft.network.chat.Component;
 
-/** 同一客户端 tick 内记录展开页的数据行及实际摘要绘制参数。 */
-final class CompactReadings extends GuiGraphicsExtractor {
-    private final List<String> labels = new ArrayList<>();
-    private final List<Integer> fills = new ArrayList<>();
+import static com.google.common.base.Preconditions.checkState;
 
-    private CompactReadings(Minecraft client) {
-        // 使用独立绘制状态，采样不能改变玩家当前帧。
-        super(client, new GuiRenderState(), 0, 0);
+/** 用游戏里的真字体重放游戏画面上每个小窗的摘要：打出每行文字，并核对没有画出小窗、同一行没有相叠。 */
+final class CompactReadings {
+    private CompactReadings() {
     }
 
     static void record(Minecraft c, BodyUiModule module, ClientRuntime runtime) {
-        // 整段同步执行，选样期间不让网络回调替换身体或吐纳消息。
+        // 整段同步执行，取样期间不让网络回调替换身体或吐纳消息。
         var body = module.snapshot();
         var extension = MeridianSceneExtension.required();
         for (var section : InspectionSection.values()) {
@@ -35,54 +28,45 @@ final class CompactReadings extends GuiGraphicsExtractor {
         var view = c.getWindow();
         var providers = providers(module, extension);
         for (var compact : runtime.hudCompacts(view.getGuiScaledWidth(), view.getGuiScaledHeight())) {
-            String type = runtime.catalog().features().get(compact.feature()).windowType();
-            var state = runtime.workspace().windowBar().stream()
-                    .filter(window -> window.key().windowType().equals(type))
-                    .findFirst()
-                    .orElseThrow();
-            var provider = providers.get(compact.feature());
-            for (var variant : provider.variants()) {
-                var output = new CompactReadings(c);
-                provider.draw(output, state, variant.id(), 0);
-                line("小窗", variant.id(), output.labels);
-                line("填色", variant.id(), output.fills);
+            replay(c, compact, providers.get(compact.feature()));
+        }
+    }
+
+    private static void replay(Minecraft c, CompactView compact, CompactSummary summary) {
+        // 每个样式都量一遍；正在显示的那个样式还要和屏幕上的矩形一样大，也就是没有缩放。
+        for (var variant : summary.variants()) {
+            var probe = new SummaryProbe(c.font::width);
+            summary.paint(probe, variant.id());
+            line("小窗", variant.id() + " " + variant.width() + "x" + variant.height(), probe.lines());
+            var problems = probe.problems(variant);
+            checkState(problems.isEmpty(), "小窗 %s 的文字不合规 %s", variant.id(), problems);
+            if (variant.id().equals(compact.variant())) {
+                var bounds = compact.bounds();
+                checkState(bounds.width() == variant.width() && bounds.height() == variant.height(),
+                        "小窗 %s 被缩放了 %s", variant.id(), bounds);
             }
         }
     }
 
-    private static Map<String, CompactProvider> providers(BodyUiModule module, MeridianSceneExtension extension) {
+    private static Map<String, CompactSummary> providers(BodyUiModule module, MeridianSceneExtension extension) {
         // 摘要只读模块当前持有的快照，和登记给框架的那一份由同一组工厂构造。
         return Map.of(
-                BodyFeature.SURFACE.id, extension.compactBody(InspectionSection.SURFACE, module::snapshot),
-                BodyFeature.MUSCLE.id, extension.compactBody(InspectionSection.MUSCLES, module::snapshot),
-                BodyFeature.ORGAN.id, extension.compactBody(InspectionSection.ORGANS, module::snapshot),
-                BodyFeature.MERIDIAN.id, MeridianSummaries.channels(module),
-                BodyFeature.OVERVIEW.id, MeridianSummaries.overview(module, extension),
-                BodyFeature.BREATH.id, MeridianSummaries.breath(module),
-                BodyFeature.PRACTICE.id, extension.compactPractice(module::snapshot));
+                BodyFeature.SURFACE.id, summary(extension.compactBody(InspectionSection.SURFACE, module::snapshot)),
+                BodyFeature.MUSCLE.id, summary(extension.compactBody(InspectionSection.MUSCLES, module::snapshot)),
+                BodyFeature.ORGAN.id, summary(extension.compactBody(InspectionSection.ORGANS, module::snapshot)),
+                BodyFeature.MERIDIAN.id, summary(MeridianSummaries.channels(module)),
+                BodyFeature.OVERVIEW.id, summary(MeridianSummaries.overview(module, extension)),
+                BodyFeature.BREATH.id, summary(MeridianSummaries.breath(module)),
+                BodyFeature.PRACTICE.id, summary(extension.compactPractice(module::snapshot)));
+    }
+
+    private static CompactSummary summary(CompactProvider provider) {
+        return (CompactSummary) provider;
     }
 
     private static void line(String source, String group, List<?> values) {
         // 分隔符只用于验收输出。
         System.out.println("S5_DATA " + source + "\t" + group + "\t"
                 + String.join("|", values.stream().map(Object::toString).toList()));
-    }
-
-    @Override
-    public void text(Font font, String value, int x, int y, int color, boolean shadow) {
-        // 数字保留实际绘制精度。
-        labels.add(value);
-    }
-
-    @Override
-    public void text(Font font, Component value, int x, int y, int color, boolean shadow) {
-        // 保留带伤情着色的三连数。
-        labels.add(value.getString());
-    }
-
-    @Override
-    public void fill(int left, int top, int right, int bottom, int color) {
-        // 经脉格、器官加工及人形伤处都以主题色区分。
-        fills.add(color);
     }
 }

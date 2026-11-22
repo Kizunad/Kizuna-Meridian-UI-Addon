@@ -20,6 +20,9 @@ public interface MeridianSceneExtension {
 
     List<String> inspectionRows(InspectionSection section, BodySnapshot body);
 
+    /** 概况小窗的宽度，GUI 像素；overviewLine 给出的一行按原字号不能比它宽。 */
+    int OVERVIEW_WIDTH = 160;
+
     String overviewLine(BodySnapshot body);
 
     CompactProvider compactBody(InspectionSection section, Supplier<BodySnapshot> snapshot);

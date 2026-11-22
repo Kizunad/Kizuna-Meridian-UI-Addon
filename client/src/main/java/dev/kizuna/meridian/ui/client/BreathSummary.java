@@ -24,7 +24,7 @@ record BreathSummary(double reserve, double air, double stored) {
 
     String intakeAmount() {
         // 小窗只显示累计值，完整的账户说明留在展开页。
-        return String.format(Locale.ROOT, "%.2f", stored);
+        return CompactNumbers.fine(stored);
     }
 
     String airLabel() {
@@ -32,13 +32,13 @@ record BreathSummary(double reserve, double air, double stored) {
     }
 
     String airShortLabel() {
-        // HUD 固定短字头，完整用语仍由展开页和悬浮说明呈现。
-        return String.format(Locale.ROOT, "气 %.0f%%", air * PERCENT);
+        // 小窗固定用短字头，完整用语仍由展开页和悬浮说明呈现。
+        return "气 " + CompactNumbers.percent(air);
     }
 
     String reservePercent() {
         // 与完整吐纳摘要共用同一份余力比例。
-        return String.format(Locale.ROOT, "%.0f", reserve * PERCENT);
+        return CompactNumbers.percent(reserve);
     }
 
     String reserveLabel() {
