@@ -10,7 +10,7 @@ import dev.kizuna.inventoryui.window.UiWindowManager.Rect;
 import dev.kizuna.inventoryui.window.UiWindowManager.WindowState;
 import dev.kizuna.inventoryui.workspace.UiVersion;
 import dev.kizuna.meridian.progression.client.ClientProgression;
-import io.wispforest.owo.ui.core.UIComponent;
+import dev.kizuna.meridian.ui.api.MeridianSceneExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -194,20 +194,25 @@ public final class ContentWindowJourney {
     }
 
     private void clickToggle(Minecraft c) {
-        var toggle = module.surfacePanel().root().childById(UIComponent.class, "overview-toggle");
-        var e = new MouseButtonEvent(toggle.x() + toggle.width() / 2.0, toggle.y() + toggle.height() / 2.0,
+        // 在体表窗口里按右键，再点菜单里的「概况小窗」；两下都从屏幕的鼠标入口进去。
+        var root = module.surfaceView().orElseThrow().root();
+        var open = new MouseButtonEvent(root.x() + root.width() / 2.0, root.y() + root.height() / 2.0,
+                new MouseButtonInfo(GLFW.GLFW_MOUSE_BUTTON_RIGHT, 0));
+        c.gui.screen().mouseClicked(open, false /* doubleClick */);
+        c.gui.screen().mouseReleased(open);
+        var row = runtime.contextMenu().row("overview", c.gui.screen().width, c.gui.screen().height).orElseThrow();
+        var pick = new MouseButtonEvent(row.left() + row.width() / 2.0, row.top() + row.height() / 2.0,
                 new MouseButtonInfo(GLFW.GLFW_MOUSE_BUTTON_LEFT, 0));
-        c.gui.screen().mouseClicked(e, false /* doubleClick */);
-        c.gui.screen().mouseReleased(e);
+        c.gui.screen().mouseClicked(pick, false /* doubleClick */);
+        c.gui.screen().mouseReleased(pick);
     }
 
     private void expanded(Minecraft c) {
         String id = WINDOWS.get(index);
         if (id.equals(SURFACE)) {
-            checkState(module.surfacePanel().vitalitySummaryFitsInformationWidth(), "年龄或寿元摘要超出详情宽度");
-            String summary = module.surfacePanel().summaryText();
-            checkState(summary.contains("年龄 18.0 年") && summary.contains("寿元 62.0 年"),
-                    "体表摘要年龄或寿元数值不完整 %s", summary);
+            var notes = MeridianSceneExtension.required().surfaceReadout(module.snapshot()).notes();
+            // 只写整年、零头舍去：十八岁，寿元还剩六十一年多。
+            checkState(notes.getLast().endsWith("18/61 年"), "体表窗的年龄或寿元不对 %s", notes);
         }
         if (!capture(c, shortId() + "-expanded")) {
             return;

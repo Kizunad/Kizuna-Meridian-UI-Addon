@@ -7,9 +7,9 @@ import java.util.Set;
 
 /** 新版界面里身体相关的功能和窗口；ID 和旧版相同，旧版的锁按窗口类型认领。尺寸是 GUI 逻辑像素。 */
 enum BodyFeature {
-    SURFACE("body", "body", "体表", Frame.INSPECTION),
-    MUSCLE("muscles", "muscles", "肌肉", Frame.INSPECTION),
-    ORGAN("organs", "organs", "器官", Frame.INSPECTION),
+    SURFACE("body", "body", "检视 · 体表", Frame.SURFACE),
+    MUSCLE("muscles", "muscles", "检视 · 肌肉", Frame.INSPECTION),
+    ORGAN("organs", "organs", "检视 · 器官", Frame.INSPECTION),
     OVERVIEW("overview", "overview", "概况", Frame.OVERVIEW),
     BREATH("cultivation", "cultivation", "吐纳", Frame.SCENE),
     AURA("aura", "aura", "此地灵气", Frame.AURA),
@@ -17,8 +17,13 @@ enum BodyFeature {
     PRACTICE("practice", "practice", "", Frame.PRACTICE),
     OPERATION("meridian_operation", "meridian_operation", "经脉操作", Frame.OPERATION);
 
+    /** 体表窗口换成立体模型时至少要这么大，和肌肉、器官窗口的首选尺寸相同。 */
+    static final int MODEL_WIDTH = Frame.INSPECTION.width();
+    static final int MODEL_HEIGHT = Frame.INSPECTION.height();
+
     /** 最小和首选外框。检视拆出的窗口用新的小尺寸，其余窗口的内容还是旧版排法，尺寸也和旧版一致。 */
     private record Frame(int minWidth, int minHeight, int width, int height) {
+        static final Frame SURFACE = new Frame(150, 60, 150, 104);
         static final Frame INSPECTION = new Frame(150, 120, 194, 174);
         static final Frame OVERVIEW = new Frame(150, 60, 190, 60);
         static final Frame SCENE = new Frame(280, 180, 560, 450);

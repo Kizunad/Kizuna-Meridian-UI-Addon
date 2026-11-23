@@ -6,6 +6,7 @@ import dev.kizuna.inventoryui.client.CompactSlot;
 import dev.kizuna.inventoryui.client.RestoreBinding;
 import dev.kizuna.inventoryui.client.RestoreReadiness;
 import dev.kizuna.inventoryui.client.RestoreStatus;
+import dev.kizuna.inventoryui.inventory.ItemAction;
 import dev.kizuna.inventoryui.registry.FrameworkCatalog;
 import dev.kizuna.inventoryui.window.UiWindowManager.WindowKey;
 import dev.kizuna.inventoryui.window.UiWindowManager.WindowState;
@@ -32,6 +33,10 @@ final class ModernBodyWindows {
     private static final List<BodyFeature> SUMMARY_MAIN_COLUMN = List.of(BodyFeature.BREATH, BodyFeature.PRACTICE,
             BodyFeature.SURFACE, BodyFeature.MERIDIAN, BodyFeature.OVERVIEW);
     private static final List<BodyFeature> SUMMARY_SIDE_COLUMN = List.of(BodyFeature.MUSCLE, BodyFeature.ORGAN);
+    private static final String MENU_LAYER = "meridian_ui.surface.menu.layer";
+    private static final String MENU_LAYER_SHOWN = "meridian_ui.surface.menu.layer_shown";
+    private static final String MENU_OVERVIEW = "meridian_ui.surface.menu.overview";
+    private static final String MENU_OVERVIEW_OPEN = "meridian_ui.surface.menu.overview_open";
     private final BodyUiModule module;
     private final Runnable requestIntrospection;
     private final Runnable syncIntrospection;
@@ -41,6 +46,7 @@ final class ModernBodyWindows {
     private String inspectId = "";
     private WindowKey surfaceKey;
     private boolean surfaceLocked;
+    private ModernSurfacePanel surface;
 
     ModernBodyWindows(BodyUiModule module, Runnable requestIntrospection, Runnable syncIntrospection) {
         this.module = module;
@@ -65,6 +71,7 @@ final class ModernBodyWindows {
     private void registerInspections(ClientBindings bindings) {
         // 体表沿用旧版检视的窗口类型和未读残卷时的锁定通知；另外三个入口沿用内观权限。
         bindings.window(BodyFeature.SURFACE.type, (owner, w) -> createBodyWindow(w, InspectionSection.SURFACE));
+        bindings.windowMenu(BodyFeature.SURFACE.type, window -> surfaceMenu());
         bindings.featureAccess(BodyFeature.MUSCLE.id, ClientProgression::canInspect);
         bindings.window(BodyFeature.MUSCLE.type, (owner, w) -> createBodyWindow(w, InspectionSection.MUSCLES));
         bindings.featureAccess(BodyFeature.ORGAN.id, ClientProgression::canInspect);
@@ -88,12 +95,12 @@ final class ModernBodyWindows {
     }
 
     private static CompactSlot summarySlot(BodyFeature feature) {
-        // 没被玩家拖过的小窗：主列贴左边自上而下，肌肉和器官在它右边另起一列。
+        // 没被玩家拖过的小窗：主列贴左边自上而下，肌肉和器官贴右边另排一列。
         int main = SUMMARY_MAIN_COLUMN.indexOf(feature);
         if (main >= 0) {
             return new CompactSlot(0, main);
         }
-        return new CompactSlot(1, SUMMARY_SIDE_COLUMN.indexOf(feature));
+        return new CompactSlot(CompactSlot.Edge.RIGHT, 0, SUMMARY_SIDE_COLUMN.indexOf(feature));
     }
 
     private void bindSummary(ClientBindings bindings, BodyFeature feature, CompactProvider provider) {
@@ -193,14 +200,85 @@ final class ModernBodyWindows {
         if (scene == null || body == null) {
             return UIComponents.label(Component.literal(UiErrors.MISSING_BODY));
         }
-        ModernBodyPanel opened = new ModernBodyPanel(scene, body, section,
-                () -> overviewWindow().isPresent(), this::toggleOverview);
+        ModernBodyPanel opened = new ModernBodyPanel(scene, body, section);
         inspection.put(section, opened);
         window.scope().addCleanup(() -> {
             opened.canvas().dispose();
             inspection.remove(section, opened);
         });
-        return opened.root();
+        if (section != InspectionSection.SURFACE) {
+            return opened.root();
+        }
+        var extension = MeridianSceneExtension.required();
+        var created = new ModernSurfacePanel(opened, () -> extension.surfaceReadout(module.snapshot()),
+                new WindowRoom(openedKey));
+        surface = created;
+        window.scope().addCleanup(() -> {
+            if (surface == created) {
+                surface = null;
+            }
+        });
+        return created.root();
+    }
+
+    /** 体表窗口的正文向它所在的窗口要地方；窗口已经够大就不动。 */
+    private final class WindowRoom implements ModernSurfacePanel.Room {
+        private final WindowKey key;
+
+        WindowRoom(WindowKey key) {
+            this.key = key;
+        }
+
+        @Override
+        public void atLeast(int width, int height) {
+            var windows = module.runtime().workspace().windows();
+            var current = windows.snapshot().stream().filter(state -> state.key().equals(key)).findFirst();
+            if (current.isEmpty()) {
+                return;
+            }
+            var bounds = current.get().bounds();
+            int nextWidth = Math.max(bounds.width(), width);
+            int nextHeight = Math.max(bounds.height(), height);
+            if (nextWidth != bounds.width() || nextHeight != bounds.height()) {
+                windows.resize(key, Integer.toString(nextWidth), Integer.toString(nextHeight));
+            }
+        }
+
+        @Override
+        public void taller(int pixels) {
+            var windows = module.runtime().workspace().windows();
+            windows.snapshot().stream().filter(state -> state.key().equals(key)).findFirst()
+                    .ifPresent(state -> atLeast(state.bounds().width(), state.bounds().height() + pixels));
+        }
+    }
+
+    private List<ItemAction> surfaceMenu() {
+        // 体表窗口的右键菜单：每个图层一项，再加概况小窗的开关；窗口还锁着时没有菜单。
+        var panel = inspection.get(InspectionSection.SURFACE);
+        if (panel == null) {
+            return List.of();
+        }
+        var actions = new ArrayList<ItemAction>();
+        for (var layer : panel.layers()) {
+            String key = MENU_LAYER;
+            if (layer.shown()) {
+                key = MENU_LAYER_SHOWN;
+            }
+            actions.add(new ItemAction("layer:" + layer.id(), Component.translatable(key, layer.name()).getString(),
+                    true /* enabled */, "", () -> panel.setLayerVisible(layer.id(), !layer.shown())));
+        }
+        String overview = MENU_OVERVIEW;
+        if (overviewWindow().isPresent()) {
+            overview = MENU_OVERVIEW_OPEN;
+        }
+        actions.add(new ItemAction("overview", Component.translatable(overview).getString(), true /* enabled */, "",
+                this::toggleOverview));
+        return List.copyOf(actions);
+    }
+
+    /** 体表窗口现在的正文；窗口没开或还锁着时没有。 */
+    Optional<ModernSurfacePanel> surface() {
+        return Optional.ofNullable(surface);
     }
 
     ModernBodyPanel panel(InspectionSection section) {
@@ -215,10 +293,16 @@ final class ModernBodyWindows {
     void tick() {
         // 检视摘要里的负重读数不随身体快照来，开着窗口时逐 tick 核对。
         inspection.values().forEach(ModernBodyPanel::tick);
+        if (surface != null) {
+            surface.tick();
+        }
     }
 
     void update(BodySnapshot snapshot) {
         inspection.values().forEach(opened -> opened.update(snapshot));
+        if (surface != null) {
+            surface.update();
+        }
     }
 
     void progressChanged() {
@@ -257,6 +341,7 @@ final class ModernBodyWindows {
         breathReceipt = null;
         inspectId = "";
         inspection.clear();
+        surface = null;
         surfaceKey = null;
     }
 }

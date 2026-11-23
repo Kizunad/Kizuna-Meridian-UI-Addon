@@ -417,6 +417,11 @@ public final class BodyUiModule implements ClientModule {
         return modern.panel(InspectionSection.SURFACE);
     }
 
+    /** 新版体表窗口现在的正文（平面人形或立体模型）；窗口没开或还锁着时为空。 */
+    Optional<ModernSurfacePanel> surfaceView() {
+        return modern.surface();
+    }
+
     BodyScene scene() {
         return scene;
     }

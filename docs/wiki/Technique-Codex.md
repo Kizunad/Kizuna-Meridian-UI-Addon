@@ -7,6 +7,7 @@
 `TechniqueCodex.OPEN`，本附属的客户端入口 `CodexClient` 在这个事件上翻开 `CodexScreen`。
 书页是独立 Screen，不进 Inventory UI 工作台：屏幕正中两页羊皮纸，没有窗口外框和顶栏按钮，Esc 合上。
 书最大 600×390 GUI 单位，小屏幕上四边各留 8 单位。
+书翻开时不画原版 HUD（`CodexScreen` 实现界面框架的 `VanillaHudHidden`）：书没盖住的边上不会露出聊天栏的行首、快捷栏和状态栏，合上以后照常。
 
 谁拿到书、什么时候拿到不归本附属管：第一次学会一卷时由 Threatening 的进度奖励送书，配方见 Progression 进阶树。
 书页只读当前玩家自己的已学列表，不改学习或功法配置。

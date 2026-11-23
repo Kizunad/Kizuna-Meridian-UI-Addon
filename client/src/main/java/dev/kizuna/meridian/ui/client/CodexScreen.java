@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.ui.client;
 
+import dev.kizuna.inventoryui.client.VanillaHudHidden;
 import io.wispforest.owo.ui.base.BaseOwoScreen;
 import io.wispforest.owo.ui.container.FlowLayout;
 import io.wispforest.owo.ui.container.UIContainers;
@@ -10,8 +11,11 @@ import io.wispforest.owo.ui.core.VerticalAlignment;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
-/** 翻开的功法谱：屏幕正中两页羊皮纸，没有窗口外框和工作台按钮；Esc 合上。 */
-final class CodexScreen extends BaseOwoScreen<FlowLayout> {
+/**
+ * 翻开的功法谱：屏幕正中两页羊皮纸，没有窗口外框和工作台按钮；Esc 合上。
+ * 书没盖住的边上不画原版的聊天、快捷栏和状态栏，合上以后照常。
+ */
+final class CodexScreen extends BaseOwoScreen<FlowLayout> implements VanillaHudHidden {
     private static final int MAX_WIDTH = 600;
     private static final int MAX_HEIGHT = 390;
     private static final int EDGE = 8;

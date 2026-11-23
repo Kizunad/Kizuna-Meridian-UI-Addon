@@ -59,6 +59,8 @@ public final class HudColumnJourney {
     private static final int HOTBAR = 24;
     private static final int SPAWN_SETTLE = 140;
     private static final int HALF_CROSSHAIR = 8;
+    private static final int EDGE_MARGIN = 4;
+    private static final List<String> RIGHT_COLUMN = List.of(PREFIX + "muscles", ORGANS);
     private enum Stage { JOIN, READY, LOCK, DAY, NIGHT, SNOW, VARIANTS, EXPAND, ICONS, MISSING, DONE }
     private Stage stage = Stage.JOIN;
     private int ticks;
@@ -138,7 +140,7 @@ public final class HudColumnJourney {
             height = NARROW_HEIGHT;
         }
         GLFW.glfwSetWindowSize(c.getWindow().handle(), width, height);
-        c.options.guiScale().set(GUI_SCALE);
+        c.options.guiScale().set(Integer.getInteger("hud.scale", GUI_SCALE));
         // 状态效果的粒子在第一人称里会贴着镜头糊成大色块，验收截图里关掉；状态图标照常显示。
         c.options.particles().set(ParticleStatus.MINIMAL);
         c.resizeGui();
@@ -199,6 +201,15 @@ public final class HudColumnJourney {
                 checkState(!intersects(a, b), "小窗矩形重叠 %s %s", a, b);
             }
         }
+        for (var view : projections) {
+            // 没拖过的小窗：肌肉、器官贴右边一列，其余贴左边一列。
+            Rect bounds = view.bounds();
+            if (RIGHT_COLUMN.contains(view.feature())) {
+                checkState(bounds.x() + bounds.width() == guiWidth - EDGE_MARGIN, "没贴右边 %s %s", view.feature(), bounds);
+            } else {
+                checkState(bounds.x() == EDGE_MARGIN, "没贴左边 %s %s", view.feature(), bounds);
+            }
+        }
         var frame = StatusIcons.lastLayout();
         checkState(!frame.cells().isEmpty(), "缺少状态图标");
         checkState(frame.cells().stream().noneMatch(cell -> frame.blocked().stream().anyMatch(b ->
@@ -206,7 +217,7 @@ public final class HudColumnJourney {
                         && b.top() < cell.bottom())), "状态图标遮住小窗");
         CompactReadings.record(c, module, runtime);
         for (var view : projections) {
-            System.out.println("R2_HUD " + width + " " + label + " " + view.feature() + " " + view.variant() + " "
+            System.out.println("HUD_COLUMN " + width + " " + label + " " + view.feature() + " " + view.variant() + " "
                     + view.bounds());
         }
     }
@@ -333,7 +344,7 @@ public final class HudColumnJourney {
             return;
         }
         String name = pendingCapture;
-        Screenshot.grab(c.gameDirectory, "r2-" + width + "-" + name + ".png",
+        Screenshot.grab(c.gameDirectory, System.getProperty("hud.tag", "hud") + "-" + width + "-" + name + ".png",
                 c.gameRenderer.mainRenderTarget(), 1, message -> {});
         pendingCapture = null;
         completedCapture = name;

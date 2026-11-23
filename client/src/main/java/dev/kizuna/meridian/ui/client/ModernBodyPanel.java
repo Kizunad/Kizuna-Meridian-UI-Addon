@@ -4,9 +4,7 @@ import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
 import dev.kizuna.inventoryui.client.component.ResponsiveLayout;
 import dev.kizuna.meridian.ui.api.MeridianSceneExtension;
 import dev.kizuna.meridian.ui.api.InspectionSection;
-import java.util.function.BooleanSupplier;
 import dev.kizuna.meridian.protocol.pb.PresentationMessages.BodyVisual;
-import dev.kizuna.meridian.protocol.pb.PresentationMessages.PresentationLayer;
 import dev.kizuna.meridian.progression.client.ClientProgression;
 import io.wispforest.owo.ui.component.LabelComponent;
 import io.wispforest.owo.ui.container.FlowLayout;
@@ -25,7 +23,7 @@ public final class ModernBodyPanel {
     private static final int FULL = 100;
     private static final int PADDING = 3;
     private static final int GAP = 2;
-    private static final int TITLE_HEIGHT = 12;
+    private static final int DETAIL_PERCENT = 58;
     private static final int HINT_HEIGHT = 9;
     private static final int LAYER_ENTRY_WIDTH = 28;
     private static final int LAYER_BAR_HEIGHT = 12;
@@ -44,9 +42,9 @@ public final class ModernBodyPanel {
     private List<BodyVisual> visible = List.of();
     private List<net.minecraft.network.chat.Component> summary = List.of();
     private int informationWidth;
+    private Runnable layersChanged = () -> { };
 
-    ModernBodyPanel(BodyScene scene, BodySnapshot body, InspectionSection section,
-              BooleanSupplier overviewOpen, Runnable toggleOverview) {
+    ModernBodyPanel(BodyScene scene, BodySnapshot body, InspectionSection section) {
         // 模板校验先于窗口创建；加载唯一 XML 模板，不在代码中另建平行布局。
         scene.requireTemplate(body);
         this.scene = scene;
@@ -59,46 +57,37 @@ public final class ModernBodyPanel {
         canvas = new BodyCanvas(scene, this::select, this::overview);
         canvas.bodyEffects(body);
         content.childById(FlowLayout.class, "canvas").child(canvas);
-        FlowLayout layers = content.childById(FlowLayout.class, "layers");
-        for (PresentationLayer layer : scene.presentation().getLayersList()) {
-            if (!allowedLayers.contains(layer.getId())) {
-                continue;
-            }
-            var checkbox = new ModernLayerToggle(layer.getDisplayName(), () -> visibleLayers.contains(layer.getId()),
-                    () -> setLayerVisible(layer.getId(), !visibleLayers.contains(layer.getId()))).compact();
-            checkbox.id("layer-toggle-" + layer.getId());
-            layers.child(checkbox);
-        }
+        // 窗口标题栏已经写了名字，正文不再重复。
+        content.removeChild(content.childById(UIComponent.class, "body-title"));
         if (section == InspectionSection.SURFACE) {
-            var overview = new ModernLayerToggle("概况", overviewOpen, toggleOverview).compact();
-            overview.id("overview-toggle");
-            layers.child(overview);
+            // 体表窗口的图层在窗口右键菜单里开关，正文不留勾选条。
+            content.removeChild(content.childById(UIComponent.class, "layers-scroll"));
+        } else {
+            FlowLayout layers = content.childById(FlowLayout.class, "layers");
+            for (Layer layer : layers()) {
+                var checkbox = new ModernLayerToggle(layer.name(), () -> visibleLayers.contains(layer.id()),
+                        () -> setLayerVisible(layer.id(), !visibleLayers.contains(layer.id()))).compact();
+                checkbox.id("layer-toggle-" + layer.id());
+                layers.child(checkbox);
+            }
         }
         root = new ResponsiveLayout(content, this::arrange);
         layer(allowedLayers.getFirst());
     }
 
     private void arrange(int width, int height) {
-        // 先给标题与说明留位，再从实际余下宽度分配区域，避免百分比列加上侧栏后溢出。
+        // 先给图层条与说明留位，再从实际余下宽度分配区域，避免百分比列加上侧栏后溢出。
         MeridianTheme.apply(content);
         int innerWidth = Math.max(1, width - PADDING * 2);
-        int top = PADDING + TITLE_HEIGHT;
+        int top = PADDING;
         int bottom = Math.max(top + 1, height - PADDING - HINT_HEIGHT - GAP);
-        int layerEntryWidth = Math.min(LAYER_ENTRY_WIDTH, Math.max(1, innerWidth));
-        MeridianPanel.place(content.childById(UIComponent.class, "body-title"), PADDING, PADDING,
-                Math.max(1, innerWidth - layerEntryWidth - GAP), TITLE_HEIGHT);
         MeridianPanel.place(content.childById(UIComponent.class, "body-hint"), PADDING,
                 Math.max(PADDING, height - PADDING - HINT_HEIGHT), innerWidth, HINT_HEIGHT);
-
-        FlowLayout layers = content.childById(FlowLayout.class, "layers");
-        layers.sizing(Sizing.fill(FULL), Sizing.fixed(LAYER_BAR_HEIGHT));
-        MeridianPanel.place(content.childById(UIComponent.class, "layers-scroll"),
-                PADDING + innerWidth - layerEntryWidth, PADDING, layerEntryWidth, LAYER_BAR_HEIGHT);
-        for (UIComponent toggle : layers.children()) {
-            toggle.sizing(Sizing.fixed(28), Sizing.fixed(LAYER_BAR_HEIGHT));
+        if (section != InspectionSection.SURFACE) {
+            top = PADDING + LAYER_BAR_HEIGHT;
+            arrangeLayers(innerWidth);
         }
-
-        int detailWidth = Math.max(1, (innerWidth - GAP) * 58 / 100);
+        int detailWidth = Math.max(1, (innerWidth - GAP) * DETAIL_PERCENT / FULL);
         int modelWidth = Math.max(1, innerWidth - GAP - detailWidth);
         int areaHeight = Math.max(1, bottom - top);
         MeridianPanel.place(content.childById(UIComponent.class, "canvas"), PADDING, top, modelWidth, areaHeight);
@@ -107,6 +96,39 @@ public final class ModernBodyPanel {
         informationWidth = Math.max(1, detailWidth - INFORMATION_RIGHT_PADDING);
         information.maxWidth(informationWidth);
         information.sizing(Sizing.fixed(informationWidth), Sizing.content());
+    }
+
+    private void arrangeLayers(int innerWidth) {
+        // 勾选条贴右上角，一格一个图层。
+        int entryWidth = Math.min(LAYER_ENTRY_WIDTH, Math.max(1, innerWidth));
+        FlowLayout layers = content.childById(FlowLayout.class, "layers");
+        layers.sizing(Sizing.fill(FULL), Sizing.fixed(LAYER_BAR_HEIGHT));
+        MeridianPanel.place(content.childById(UIComponent.class, "layers-scroll"),
+                PADDING + innerWidth - entryWidth, PADDING, entryWidth, LAYER_BAR_HEIGHT);
+        for (UIComponent toggle : layers.children()) {
+            toggle.sizing(Sizing.fixed(LAYER_ENTRY_WIDTH), Sizing.fixed(LAYER_BAR_HEIGHT));
+        }
+    }
+
+    /** 这个窗口能开关的一个图层和它现在显示没有。 */
+    public record Layer(String id, String name, boolean shown) { }
+
+    /** 按模型声明的顺序列出这个窗口能开关的图层。 */
+    public List<Layer> layers() {
+        return scene.presentation().getLayersList().stream()
+                .filter(layer -> allowedLayers.contains(layer.getId()))
+                .map(layer -> new Layer(layer.getId(), layer.getDisplayName(), visibleLayers.contains(layer.getId())))
+                .toList();
+    }
+
+    /** 除了打头的那一层以外还显示着别的图层：这时要看立体模型才分得清前后。 */
+    public boolean layered() {
+        return visibleLayers.stream().anyMatch(id -> !id.equals(allowedLayers.getFirst()));
+    }
+
+    /** 图层的显示集合变了以后叫一声；窗口据此换正文的排法。 */
+    void onLayersChanged(Runnable listener) {
+        layersChanged = listener;
     }
 
     public FlowLayout root() {
@@ -153,6 +175,7 @@ public final class ModernBodyPanel {
         visibleLayers.add(id);
         refreshObjects();
         overview();
+        layersChanged.run();
     }
 
     public void setLayerVisible(String id, boolean enabled) {
@@ -173,6 +196,7 @@ public final class ModernBodyPanel {
             selected = null;
         }
         showInformation();
+        layersChanged.run();
     }
 
     public Set<String> visibleLayers() {
@@ -209,8 +233,6 @@ public final class ModernBodyPanel {
         if (section == InspectionSection.SURFACE) {
             summary = extension.surfaceSummaryLines(body);
         }
-        content.childById(LabelComponent.class, "body-title")
-                .text(net.minecraft.network.chat.Component.literal(title()));
         for (var line : summary) {
             text.append(line).append("\n");
         }
@@ -229,14 +251,6 @@ public final class ModernBodyPanel {
             }
         }
         information.text(text);
-    }
-
-    private String title() {
-        return switch (section) {
-            case SURFACE -> "检视 · 体表";
-            case MUSCLES -> "检视 · 肌肉";
-            case ORGANS -> "检视 · 器官";
-        };
     }
 
     public void select(BodyVisual node) {

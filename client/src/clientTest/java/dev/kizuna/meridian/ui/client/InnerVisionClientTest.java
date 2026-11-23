@@ -46,6 +46,8 @@ public final class InnerVisionClientTest implements ClientModInitializer {
         // 测试入口只在专用运行任务中加载，失败也写报告并退出。
         if (System.getProperty("hud.width") != null) {
             new HudColumnJourney().register();
+        } else if (System.getProperty("surface.width") != null) {
+            new SurfaceWindowJourney().register();
         } else if (System.getProperty("content.width") != null) {
             new ContentWindowJourney().register();
         } else {

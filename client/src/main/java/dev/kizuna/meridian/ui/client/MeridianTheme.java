@@ -40,7 +40,7 @@ public final class MeridianTheme {
         if (component instanceof LabelComponent label) {
             String token = ThemeTokens.TEXT;
             String id = label.id();
-            if ("body-hint".equals(id) || "status-text".equals(id)) {
+            if ("body-hint".equals(id) || "status-text".equals(id) || "surface-footnotes".equals(id)) {
                 token = ThemeTokens.MUTED_TEXT;
             } else if ("feedback-text".equals(id)) {
                 token = ThemeTokens.INPUT_ERROR;

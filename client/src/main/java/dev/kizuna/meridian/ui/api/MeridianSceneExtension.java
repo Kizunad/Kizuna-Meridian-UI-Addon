@@ -38,6 +38,9 @@ public interface MeridianSceneExtension {
         return bodySummaryLines(body);
     }
 
+    /** 新版体表窗口的正文：人形、受伤部位和底下的说明行。 */
+    SurfaceReadout surfaceReadout(BodySnapshot body);
+
     /** 经脉窗口「i」里的开脉流程说明，多行文字；不提供时只显示快捷键。 */
     default String meridianGuide() {
         return "";
