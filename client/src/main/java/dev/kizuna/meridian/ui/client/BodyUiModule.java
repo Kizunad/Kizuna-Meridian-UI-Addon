@@ -39,6 +39,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
 /** 通用窗口入口；宿主提供 Protobuf 身体及生物包的资源标识。 */
@@ -107,7 +108,7 @@ public final class BodyUiModule implements ClientModule {
 
     @Override
     public void registerModern(ClientBindings bindings) {
-        // 吐纳、此地灵气、经脉、中焦和经脉操作在新版里沿用 register 绑的窗口；这里只绑检视拆出的窗口和各窗口的摘要。
+        // 此地灵气、经脉、中焦和经脉操作在新版里沿用 register 绑的窗口；这里绑检视拆出的窗口、新版排法的吐纳窗口和各窗口的摘要。
         modern.register(bindings);
     }
 
@@ -152,7 +153,7 @@ public final class BodyUiModule implements ClientModule {
             // 输入租约按客户端 tick 续期，渲染帧率不会改变控制消息的频率。
             meridians.tick();
             if (cultivationPanel != null) {
-                cultivationPanel.canvas().tickInput();
+                cultivationPanel.tick();
             }
             // 检视摘要里的负重读数不随身体快照来，开着窗口时逐 tick 核对。
             if (panel != null) {
@@ -180,40 +181,8 @@ public final class BodyUiModule implements ClientModule {
             showGathering();
             return opened;
         });
-        bindings.window("meridian_ui:cultivation_window", (runtime, window) -> {
-            // 出身授权可以直接打开吐纳；普通入口仍由下面的锁定态提示缺少阅读事实。
-            WindowKey openedKey = window.key();
-            if (!ClientProgression.canGather()) {
-                // 吐纳入口仍在修炼页，窗口只给锁和找卷提示；记下锁定态，读完后关闭以便重开出真实场景。
-                cultivationKey = openedKey;
-                cultivationLocked = true;
-                window.scope().addCleanup(() -> {
-                    if (cultivationKey == openedKey) {
-                        cultivationKey = null;
-                    }
-                });
-                return new LockedNotice("吐纳", UiErrors.GATHERING_LOCKED);
-            }
-            if (scene == null || body == null) {
-                return UIComponents.label(net.minecraft.network.chat.Component.literal(UiErrors.MISSING_BODY));
-            }
-            cultivationPanel = new CultivationPanel(scene, this::controlBreathing);
-            cultivationKey = openedKey;
-            cultivationLocked = false;
-            showGathering();
-            CultivationPanel opened = cultivationPanel;
-            window.scope().addCleanup(() -> {
-                if (cultivationPanel == opened) {
-                    opened.close();
-                    cultivationPanel = null;
-                }
-                if (cultivationKey == openedKey) {
-                    cultivationKey = null;
-                }
-            });
-            refreshGathering();
-            return cultivationPanel.root();
-        });
+        bindings.window("meridian_ui:cultivation_window", (runtime, window) ->
+                breathingWindow(window, ClassicCultivationPanel::new));
     }
 
     private UIComponent createBodyWindow(WindowState window) {
@@ -461,6 +430,43 @@ public final class BodyUiModule implements ClientModule {
     public GatheringView gatheringView() {
         // 交互验收读取宿主发来的最新吐纳视图，只读。
         return gathering;
+    }
+
+    /** 吐纳窗口的组件：没读过残卷给锁定提示，身体没到给缺身体提示，否则用 maker 造正文并接上快照和关窗清理。 */
+    UIComponent breathingWindow(WindowState window,
+            BiFunction<BodyScene, Consumer<BreathControl>, CultivationPanel> maker) {
+        // 出身授权可以直接打开吐纳；普通入口仍由下面的锁定态提示缺少阅读事实。
+        WindowKey openedKey = window.key();
+        if (!ClientProgression.canGather()) {
+            // 吐纳入口仍在修炼页，窗口只给锁和找卷提示；记下锁定态，读完后关闭以便重开出真实场景。
+            cultivationKey = openedKey;
+            cultivationLocked = true;
+            window.scope().addCleanup(() -> {
+                if (cultivationKey == openedKey) {
+                    cultivationKey = null;
+                }
+            });
+            return new LockedNotice("吐纳", UiErrors.GATHERING_LOCKED);
+        }
+        if (scene == null || body == null) {
+            return UIComponents.label(net.minecraft.network.chat.Component.literal(UiErrors.MISSING_BODY));
+        }
+        cultivationPanel = maker.apply(scene, this::controlBreathing);
+        cultivationKey = openedKey;
+        cultivationLocked = false;
+        showGathering();
+        CultivationPanel opened = cultivationPanel;
+        window.scope().addCleanup(() -> {
+            if (cultivationPanel == opened) {
+                opened.close();
+                cultivationPanel = null;
+            }
+            if (cultivationKey == openedKey) {
+                cultivationKey = null;
+            }
+        });
+        refreshGathering();
+        return cultivationPanel.root();
     }
 
     public CultivationPanel cultivationPanel() {

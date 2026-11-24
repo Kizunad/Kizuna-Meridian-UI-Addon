@@ -31,6 +31,9 @@ public final class BreathingCanvas extends BaseUIComponent {
     private static final int TUTORIAL_PADDING = 8;
     private static final int TUTORIAL_TOP = 48;
     private static final int TUTORIAL_LINE_GAP = 3;
+    private static final int TIGHT_MARGIN = 3;
+    private static final int TIGHT_LINE_GAP = 1;
+    private static final double TIGHT_DISTANCE = 2.6;
     private static final float[] CIRCLE_X = new float[49];
     private static final float[] CIRCLE_Y = new float[49];
 
@@ -63,6 +66,7 @@ public final class BreathingCanvas extends BaseUIComponent {
     private double shownAir;
     private double ageSeconds;
     private boolean tutorial;
+    private Captions captions = Captions.ROOMY;
     private boolean rotating;
 
     public BreathingCanvas(BodyScene scene, Consumer<BreathControl> sender) {
@@ -178,11 +182,50 @@ public final class BreathingCanvas extends BaseUIComponent {
                     x, y, x + width, y + height, new Matrix3x2f(context.pose()), context.scissorStack.peek()));
         }
         context.enableScissor(x, y, x + width, y + height);
-        drawText(context);
+        if (captions == Captions.ROOMY) {
+            drawText(context);
+        }
         if (tutorial) {
             drawTutorial(context);
         }
         context.disableScissor();
+    }
+
+    /** 画布里的字怎么摆。 */
+    enum Captions {
+        /** 大窗口：操作提示写在画布左下，教学框在画布上部。 */
+        ROOMY(TEXT_PADDING, TUTORIAL_PADDING, TUTORIAL_LINE_GAP),
+        /** 小窗口：操作提示由窗口自己写在画布外，教学框贴着画布底、边距收紧。 */
+        TIGHT(TIGHT_MARGIN, TIGHT_MARGIN, TIGHT_LINE_GAP);
+
+        private final int margin;
+        private final int padding;
+        private final int lineGap;
+
+        Captions(int margin, int padding, int lineGap) {
+            this.margin = margin;
+            this.padding = padding;
+            this.lineGap = lineGap;
+        }
+    }
+
+    void captions(Captions next) {
+        captions = next;
+        if (next == Captions.TIGHT) {
+            // 小画布里把镜头拉近，人还看得清。
+            camera.distance(TIGHT_DISTANCE);
+        }
+    }
+
+    /** 这会儿的操作提示。 */
+    String hint() {
+        if (!view.getActive()) {
+            return "中键旋转 · 滚轮缩放";
+        }
+        if (view.getAutomatic()) {
+            return "自动吸呼中 · 中键旋转 · 滚轮缩放";
+        }
+        return "左吸 · 右呼 · 中键旋转 · 滚轮缩放";
     }
 
     private BodySceneRenderer.Scene breathingScene(double airRatio, long now) {
@@ -328,15 +371,7 @@ public final class BreathingCanvas extends BaseUIComponent {
     private void drawText(OwoUIGraphics context) {
         // 当前输入模式放在左下角，不与开始按钮争用中心位置。
         var font = Minecraft.getInstance().font;
-        String hint;
-        if (!view.getActive()) {
-            hint = "中键旋转 · 滚轮缩放";
-        } else if (view.getAutomatic()) {
-            hint = "自动吸呼中 · 中键旋转 · 滚轮缩放";
-        } else {
-            hint = "左吸 · 右呼 · 中键旋转 · 滚轮缩放";
-        }
-        String caption = font.plainSubstrByWidth(hint, Math.max(0, width - TEXT_PADDING * 2));
+        String caption = font.plainSubstrByWidth(hint(), Math.max(0, width - TEXT_PADDING * 2));
         context.text(font, caption, x + TEXT_PADDING, y + height - HINT_BOTTOM,
                 MeridianTheme.color(dev.kizuna.inventoryui.theme.ThemeTokens.MUTED_TEXT), false /* shadow */);
     }
@@ -344,21 +379,24 @@ public final class BreathingCanvas extends BaseUIComponent {
     private void drawTutorial(OwoUIGraphics context) {
         // 三条操作说明沿左侧排布，不遮暗整幅模型；窄窗口按实际宽度折行。
         var font = Minecraft.getInstance().font;
-        int textWidth = Math.max(1, Math.min(TUTORIAL_WIDTH, width - (TEXT_PADDING + TUTORIAL_PADDING) * 2));
+        int textWidth = Math.max(1, Math.min(TUTORIAL_WIDTH, width - (captions.margin + captions.padding) * 2));
         String instructions = "左键吸气，右键呼气，松开停气。\n"
                 + "中键旋转、滚轮缩放；近处灵气受气流影响更强。\n"
                 + "肺满时先呼气，留意耐力与精力。";
         var lines = font.split(Component.literal(instructions), textWidth);
-        int lineHeight = font.lineHeight + TUTORIAL_LINE_GAP;
-        int left = x + TEXT_PADDING;
+        int lineHeight = font.lineHeight + captions.lineGap;
+        int left = x + captions.margin;
+        int boxHeight = lines.size() * lineHeight + captions.padding * 2;
         int top = y + TUTORIAL_TOP;
-        var bounds = new MeridianTheme.Bounds(left, top, textWidth + TUTORIAL_PADDING * 2,
-                lines.size() * lineHeight + TUTORIAL_PADDING * 2);
+        if (captions == Captions.TIGHT) {
+            top = y + height - captions.margin - boxHeight;
+        }
+        var bounds = new MeridianTheme.Bounds(left, top, textWidth + captions.padding * 2, boxHeight);
         MeridianTheme.panel(context, bounds);
         int textColor = MeridianTheme.color(dev.kizuna.inventoryui.theme.ThemeTokens.TEXT);
         for (int index = 0; index < lines.size(); index++) {
-            context.text(font, lines.get(index), left + TUTORIAL_PADDING,
-                    top + TUTORIAL_PADDING + index * lineHeight, textColor, false /* shadow */);
+            context.text(font, lines.get(index), left + captions.padding,
+                    top + captions.padding + index * lineHeight, textColor, false /* shadow */);
         }
     }
 

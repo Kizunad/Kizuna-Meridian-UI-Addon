@@ -50,6 +50,7 @@ final class EnvironmentEmblem extends BaseUIComponent {
     private static final Map<String, Integer> TINTS = Map.of("meridian:metal", 0xF1DC9A, "meridian:wood", 0x7FD08A,
             "meridian:water", 0x7FB7E8, "meridian:fire", 0xF0946A, "meridian:earth", 0xD9B36C, "meridian:none", 0xC8D2D2);
     private GatheringEnvironment environment;
+    private int shrink = 1;
 
     EnvironmentEmblem() {
         // 徽记本身固定大小；展开的明细画在组件范围之外的下方，不改变布局。
@@ -152,11 +153,33 @@ final class EnvironmentEmblem extends BaseUIComponent {
         return true;
     }
 
+    /** 缩成一半大小，给小窗口用；画法不变。 */
+    EnvironmentEmblem half() {
+        shrink = 2;
+        sizing(Sizing.fixed(SIZE / shrink), Sizing.fixed(SIZE / shrink));
+        return this;
+    }
+
     @Override
     public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
         if (environment == null) {
             return;
         }
+        if (shrink == 1) {
+            drawFull(context);
+            return;
+        }
+        // 以左上角为准整体缩小。
+        var pose = context.pose();
+        pose.pushMatrix();
+        pose.translate(x, y);
+        pose.scale(1f / shrink, 1f / shrink);
+        pose.translate(-x, -y);
+        drawFull(context);
+        pose.popMatrix();
+    }
+
+    private void drawFull(OwoUIGraphics context) {
         List<String> leading = leading(environment);
         String first = leading.isEmpty() ? "meridian:none" : leading.get(0);
         float glow = (float) glow(environment);

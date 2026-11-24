@@ -115,7 +115,7 @@ public final class BreathElementClientTest implements ClientModInitializer {
         if (window == null) {
             var runtime = InventoryUiClient.runtime();
             runtime.motion(false /* enabled */);
-            runtime.uiVersion(dev.kizuna.inventoryui.workspace.UiVersion.CLASSIC);
+            runtime.uiVersion(BreathClipTools.version());
             runtime.openWorkspace();
             window = runtime.open("meridian_ui:cultivation", null);
         }
@@ -160,7 +160,13 @@ public final class BreathElementClientTest implements ClientModInitializer {
         String facts = "game_ticks=" + (client.level.getGameTime() - startGameTime) + "\nstored="
                 + breathing.getStoredQi() + "\nby_attribute=" + stored + "\ncaption=" + caption + "\n";
         boolean fire = stored.getOrDefault(FIRE, 0.0) >= VISIBLE_FIRE && caption.contains("火行");
-        finish(client, fire ? null : "吐纳 5 分钟，纳入里没有看得见的火行：" + stored + " 那一行：" + caption, facts);
+        String failure = fire ? null : "吐纳 5 分钟，纳入里没有看得见的火行：" + stored + " 那一行：" + caption;
+        // 新版窗口不常显这一行，它接在「纳入」的悬浮说明里。
+        if (fire && module.cultivationPanel() instanceof ModernCultivationPanel modern
+                && !modern.intakeDetails().contains(caption)) {
+            failure = "新版窗口「纳入」的悬浮说明里没有这一行：" + caption + " 实际：" + modern.intakeDetails();
+        }
+        finish(client, failure, facts + "version=" + BreathClipTools.version().id() + "\n");
     }
 
     private static String factsLine(GatheringView view) {

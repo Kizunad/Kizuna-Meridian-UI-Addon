@@ -56,6 +56,11 @@ final class BreathingCamera {
         pitch = Math.max(-.8, Math.min(.95, pitch + dy * .008));
     }
 
+    void distance(double next) {
+        // 和滚轮缩放用同一对远近限制。
+        distance = Math.max(2.2, Math.min(6, next));
+    }
+
     void zoom(double amount) {
         // 最近距离限制避免镜头钻入身体或跨过近裁剪面。
         distance = Math.max(2.2, Math.min(6, distance * Math.exp(-amount * .09)));

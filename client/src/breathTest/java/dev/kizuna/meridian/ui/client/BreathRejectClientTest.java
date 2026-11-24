@@ -122,7 +122,7 @@ public final class BreathRejectClientTest implements ClientModInitializer {
         command.join();
         var runtime = InventoryUiClient.runtime();
         runtime.motion(false /* enabled */);
-        runtime.uiVersion(dev.kizuna.inventoryui.workspace.UiVersion.CLASSIC);
+        runtime.uiVersion(BreathClipTools.version());
         runtime.openWorkspace();
         window = runtime.open("meridian_ui:cultivation", null);
         next(after);
@@ -150,7 +150,7 @@ public final class BreathRejectClientTest implements ClientModInitializer {
     private void barren(Minecraft client) {
         // 末地：记下那一行第一次出现在第几 tick、写的什么；拍满 25 秒后核对，再回主世界。
         int elapsed = ticks - stageTick;
-        String line = String.join(" / ", notice().lines());
+        String line = String.join(" / ", noticeLines());
         if (!line.isEmpty() && firstWritten < 0) {
             firstWritten = elapsed;
             written = line;
@@ -179,7 +179,7 @@ public final class BreathRejectClientTest implements ClientModInitializer {
     private void home(Minecraft client) {
         // 主世界：纳入量涨起来，那一行就该没了。
         int elapsed = ticks - stageTick;
-        String line = String.join(" / ", notice().lines());
+        String line = String.join(" / ", noticeLines());
         shoot(client, elapsed, "主世界", line);
         if (elapsed < PART_TICKS) {
             return;
@@ -190,10 +190,13 @@ public final class BreathRejectClientTest implements ClientModInitializer {
         finish(client, null);
     }
 
-    private BreathingMeters.RejectionNotice notice() {
-        // 窗口里画原因的那个正式组件。
+    private List<String> noticeLines() {
+        // 窗口里画原因的那个正式组件这会儿写的几行；两版窗口各有自己的组件。
+        if (module.cultivationPanel() instanceof ModernCultivationPanel modern) {
+            return modern.noticeLines();
+        }
         return module.cultivationPanel().root().childById(BreathingMeters.RejectionNotice.class,
-                "breathing-rejection");
+                "breathing-rejection").lines();
     }
 
     private void shoot(Minecraft client, int elapsed, String part, String line) {

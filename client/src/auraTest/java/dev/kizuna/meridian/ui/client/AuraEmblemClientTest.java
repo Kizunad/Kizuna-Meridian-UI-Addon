@@ -4,6 +4,7 @@ import dev.kizuna.inventoryui.client.AuraWindowProbe;
 import dev.kizuna.inventoryui.client.ClientModule;
 import dev.kizuna.inventoryui.client.InventoryUiClient;
 import dev.kizuna.inventoryui.window.UiWindowManager.WindowState;
+import dev.kizuna.inventoryui.workspace.UiVersion;
 import dev.kizuna.meridian.fabric.MeridianChannels;
 import dev.kizuna.meridian.progression.client.ClientProgression;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.Qi;
@@ -53,6 +54,7 @@ public final class AuraEmblemClientTest implements ClientModInitializer {
             new Scene("rich-wood", 1.9, new double[] {5, 65, 20, 5, 5, 0}, "充盈·偏木，约 1.90 元/格"));
     private static final List<String> ATTRIBUTES = List.of("meridian:metal", "meridian:wood", "meridian:water",
             "meridian:fire", "meridian:earth", "meridian:none");
+    private static final String VERSION_PROPERTY = "meridian.uiVersion";
     private static final String COMPACT_WIDTH = "380";
     private static final String COMPACT_HEIGHT = "400";
 
@@ -127,7 +129,8 @@ public final class AuraEmblemClientTest implements ClientModInitializer {
         if (window == null) {
             var runtime = InventoryUiClient.runtime();
             runtime.motion(false /* enabled */);
-            runtime.uiVersion(dev.kizuna.inventoryui.workspace.UiVersion.CLASSIC);
+            // 跑哪一版界面由运行任务点名；没点就是缺省的那一版。
+            runtime.uiVersion(UiVersion.of(System.getProperty(VERSION_PROPERTY)));
             runtime.openWorkspace();
             window = runtime.open("meridian_ui:cultivation", null);
         }
@@ -190,6 +193,11 @@ public final class AuraEmblemClientTest implements ClientModInitializer {
     }
 
     private void compact() {
+        // 新版窗口没有窄排布：徽记一直在场景左上角。
+        if (InventoryUiClient.runtime().uiVersion() == UiVersion.MODERN) {
+            next(Stage.COMPACT_SHOT);
+            return;
+        }
         // 窗口缩到窄排布：徽记挪到余力条下面，不和余力条叠在一起。
         checkState(InventoryUiClient.runtime().workspace().windows().resize(window.key(), COMPACT_WIDTH, COMPACT_HEIGHT),
                 "吐纳窗口缩不了");
@@ -202,6 +210,16 @@ public final class AuraEmblemClientTest implements ClientModInitializer {
         }
         UIComponent emblem = emblem();
         UIComponent root = module.cultivationPanel().root();
+        if (InventoryUiClient.runtime().uiVersion() == UiVersion.MODERN) {
+            UIComponent scene = module.cultivationPanel().root().childById(UIComponent.class, "breathing-scene");
+            checkState(emblem.x() >= scene.x() && emblem.y() >= scene.y()
+                    && emblem.x() + emblem.width() <= scene.x() + scene.width() / 2
+                    && emblem.y() + emblem.height() <= scene.y() + scene.height(),
+                    "新版窗口里徽记不在场景左上角：" + emblem.x() + "," + emblem.y());
+            capture(client, "aura-modern.png");
+            finish(client, null);
+            return;
+        }
         checkState(emblem.y() - root.y() >= 30, "窄窗口里徽记没有挪到余力条下面：" + (emblem.y() - root.y()));
         capture(client, "aura-compact.png");
         finish(client, null);

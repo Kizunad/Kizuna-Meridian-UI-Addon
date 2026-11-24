@@ -11,7 +11,7 @@ enum BodyFeature {
     MUSCLE("muscles", "muscles", "检视 · 肌肉", Frame.INSPECTION),
     ORGAN("organs", "organs", "检视 · 器官", Frame.INSPECTION),
     OVERVIEW("overview", "overview", "概况", Frame.OVERVIEW),
-    BREATH("cultivation", "cultivation", "吐纳", Frame.SCENE),
+    BREATH("cultivation", "cultivation", "吐纳", Frame.BREATH),
     AURA("aura", "aura", "此地灵气", Frame.AURA),
     MERIDIAN("meridians", "meridian", "经脉", Frame.SCENE),
     PRACTICE("practice", "practice", "", Frame.PRACTICE),
@@ -21,11 +21,12 @@ enum BodyFeature {
     static final int MODEL_WIDTH = Frame.INSPECTION.width();
     static final int MODEL_HEIGHT = Frame.INSPECTION.height();
 
-    /** 最小和首选外框。检视拆出的窗口用新的小尺寸，其余窗口的内容还是旧版排法，尺寸也和旧版一致。 */
+    /** 最小和首选外框。检视拆出的窗口和吐纳窗口用新的小尺寸，其余窗口的内容还是旧版排法，尺寸也和旧版一致。 */
     private record Frame(int minWidth, int minHeight, int width, int height) {
         static final Frame SURFACE = new Frame(150, 60, 150, 104);
         static final Frame INSPECTION = new Frame(150, 120, 194, 174);
         static final Frame OVERVIEW = new Frame(150, 60, 190, 60);
+        static final Frame BREATH = new Frame(150, 120, 170, 167);
         static final Frame SCENE = new Frame(280, 180, 560, 450);
         static final Frame AURA = new Frame(170, 150, 210, 180);
         static final Frame PRACTICE = new Frame(360, 280, 600, 480);

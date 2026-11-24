@@ -7,7 +7,6 @@ import io.wispforest.owo.ui.base.BaseUIComponent;
 import io.wispforest.owo.ui.component.LabelComponent;
 import io.wispforest.owo.ui.component.UIComponents;
 import io.wispforest.owo.ui.container.FlowLayout;
-import io.wispforest.owo.ui.container.ScrollContainer;
 import io.wispforest.owo.ui.container.UIContainers;
 import io.wispforest.owo.ui.core.OwoUIGraphics;
 import io.wispforest.owo.ui.core.Sizing;
@@ -19,66 +18,54 @@ import net.minecraft.network.chat.Component;
 /**
  * 新版体表窗口的正文。平常是平面人形和受伤部位逐行，人形下方接脚注，最底下一行留给悬停时才显示的操作提示；
  * 显示了体表以外的图层时换成可以转动的立体模型，回到只剩体表一层再换回来。
+ * 窗口的高度跟着内容走：受伤部位多了就长高，到 MAX_ROWS 处为止，再多的用滚轮一处一处翻。
  */
 final class ModernSurfacePanel {
-    /** 向窗口要地方：窗口只会变大，不会被缩小。 */
-    interface Room {
-        /** 窗口外框至少这么大。 */
-        void atLeast(int width, int height);
-
-        /** 窗口再高这么多像素。 */
-        void taller(int pixels);
-    }
-
     static final String HINT_KEY = "meridian_ui.surface.menu.hint";
+    /** 窗口为受伤部位最多长到露出这么多处。 */
+    static final int MAX_ROWS = 6;
     private static final int FULL = 100;
     private static final int PADDING = 3;
     private static final int COLUMN_GAP = 6;
-    private static final int SCROLLBAR_GAP = 1;
+    private static final int LIST_WIDTH = 96;
     private static final int FOOT_GAP = 2;
     private static final int LINE = SurfaceSheet.LINE;
     private final ModernBodyPanel model;
     private final Supplier<SurfaceReadout> readout;
-    private final Room room;
+    private final WindowRoom room;
     private final FlowLayout root = UIContainers.verticalFlow(Sizing.fill(FULL), Sizing.fill(FULL));
     private final FlowLayout content = UIContainers.verticalFlow(Sizing.fill(FULL), Sizing.fill(FULL));
     private final FlowLayout sheet;
     private final SurfaceSheet.Figure figure;
     private final SurfaceSheet.Wounds wounds;
-    private final ScrollContainer<SurfaceSheet.Wounds> scroll;
     private final LabelComponent footnotes = UIComponents.label(Component.empty());
     private final Hint hint = new Hint();
-    private final int scrollbar;
     private final int figureWidth;
     private final int figureHeight;
+    private final int sheetWidth;
     private List<Component> shownFootnotes = List.of();
-    private int listHeight;
     private int viewHeight;
     private int width;
     private int height;
     private boolean modelShown;
-    private boolean footnotesMoved;
 
-    ModernSurfacePanel(ModernBodyPanel model, Supplier<SurfaceReadout> readout, Room room) {
+    ModernSurfacePanel(ModernBodyPanel model, Supplier<SurfaceReadout> readout, WindowRoom room) {
         this.model = model;
         this.readout = readout;
         this.room = room;
         figure = new SurfaceSheet.Figure(readout);
         figureWidth = SurfaceSheet.figureWidth(readout.get().figure());
         figureHeight = SurfaceSheet.figureHeight(readout.get().figure());
+        sheetWidth = PADDING + figureWidth + COLUMN_GAP + LIST_WIDTH + PADDING;
         wounds = new SurfaceSheet.Wounds(readout);
-        listHeight = wounds.fit();
-        scroll = UIContainers.verticalScroll(Sizing.fill(FULL), Sizing.fill(FULL), wounds);
-        scrollbar = scroll.scrollbarThiccness();
         footnotes.id("surface-footnotes");
         content.child(figure);
-        content.child(scroll);
+        content.child(wounds);
         content.child(footnotes);
         content.child(hint);
         sheet = new ResponsiveLayout(content, this::arrange);
         root.child(sheet);
         showFootnotes(readout.get().footnotes());
-        footnotesMoved = !shownFootnotes.isEmpty();
         model.onLayersChanged(this::showMatchingView);
     }
 
@@ -116,17 +103,26 @@ final class ModernSurfacePanel {
         MeridianPanel.place(figure, PADDING, PADDING, figureWidth, figureHeight);
         int listLeft = PADDING + figureWidth + COLUMN_GAP;
         viewHeight = Math.max(1, blockBottom - PADDING);
-        MeridianPanel.place(scroll, listLeft, PADDING, Math.max(1, width - listLeft - PADDING), viewHeight);
-        reserveScrollbar();
+        MeridianPanel.place(wounds, listLeft, PADDING, Math.max(1, width - listLeft - PADDING), viewHeight);
     }
 
-    private void reserveScrollbar() {
-        // 内容比可见的这块高时才出滚动条，读数往左让开它。
-        int inset = 0;
-        if (listHeight > viewHeight) {
-            inset = scrollbar + SCROLLBAR_GAP;
+    private int sheetHeight() {
+        // 人形和受伤部位哪个高按哪个，下面依次是脚注和提示行；和 arrange 自下而上留的位对得上。
+        int column = Math.max(figureHeight, SurfaceSheet.listHeight(readout.get(), MAX_ROWS));
+        int foot = footnoteLines(sheetWidth - PADDING * 2) * LINE;
+        if (foot > 0) {
+            foot += FOOT_GAP;
         }
-        wounds.rightInset(inset);
+        return PADDING + column + foot + FOOT_GAP + LINE + PADDING;
+    }
+
+    private void claimRoom() {
+        if (modelShown) {
+            // 立体模型在平面人形那么小的窗口里看不清。
+            room.frame(BodyFeature.MODEL_WIDTH, BodyFeature.MODEL_HEIGHT);
+        } else {
+            room.content(sheetWidth, sheetHeight());
+        }
     }
 
     private void showFootnotes(List<Component> notes) {
@@ -149,12 +145,11 @@ final class ModernSurfacePanel {
         modelShown = layered;
         root.clearChildren();
         if (layered) {
-            // 立体模型在平面人形那么小的窗口里看不清。
-            room.atLeast(BodyFeature.MODEL_WIDTH, BodyFeature.MODEL_HEIGHT);
             root.child(model.root());
         } else {
             root.child(sheet);
         }
+        claimRoom();
     }
 
     FlowLayout root() {
@@ -180,33 +175,29 @@ final class ModernSurfacePanel {
         return viewHeight;
     }
 
+    /** 受伤部位那一栏的组件和它现在露出来的一段；验收用。 */
+    BaseUIComponent list() {
+        return wounds;
+    }
+
+    SurfaceSheet.Span listSpan() {
+        return wounds.span();
+    }
+
     /** 现在显示着的脚注。 */
     List<Component> footnotes() {
         return shownFootnotes;
     }
 
-    /** 身体快照换了：受伤部位的行数可能变，重定列表高度。 */
-    void update() {
-        listHeight = wounds.fit();
-        reserveScrollbar();
-    }
-
-    /** 脚注里有不跟身体快照走的内容（状态效果），每个客户端 tick 看一次，变了才重排。 */
+    /** 每个客户端 tick 看一次：脚注变了就重排，再按现在的内容向窗口要地方（受伤部位和脚注都会变）。 */
     void tick() {
         var notes = readout.get().footnotes();
         if (!notes.equals(shownFootnotes)) {
             showFootnotes(notes);
-            footnotesMoved = true;
+            if (width > 0) {
+                arrange(width, height);
+            }
         }
-        if (!footnotesMoved || width <= 0) {
-            return;
-        }
-        footnotesMoved = false;
-        arrange(width, height);
-        // 脚注把人形挤出可见范围时，窗口长高到刚好放下。
-        int cramped = figureHeight - viewHeight;
-        if (cramped > 0 && !shownFootnotes.isEmpty()) {
-            room.taller(cramped);
-        }
+        claimRoom();
     }
 }

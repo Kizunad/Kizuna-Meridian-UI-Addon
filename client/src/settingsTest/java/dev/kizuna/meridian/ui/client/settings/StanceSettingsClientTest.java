@@ -232,8 +232,9 @@ public final class StanceSettingsClientTest implements ClientModInitializer {
     private boolean openBook() {
         // 功法窗口通过正式模块工厂创建，姿态按钮不能绕开工作区。
         var runtime = InventoryUiClient.runtime();
-        runtime.open("meridian_ui:combat", null);
+        // 先定版本再开窗：换版本会关掉当前版开着的窗口。
         runtime.uiVersion(dev.kizuna.inventoryui.workspace.UiVersion.CLASSIC);
+        runtime.open("meridian_ui:combat", null);
         runtime.openWorkspace();
         return true;
     }

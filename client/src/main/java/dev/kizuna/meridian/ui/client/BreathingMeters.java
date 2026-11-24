@@ -148,45 +148,10 @@ final class BreathingMeters {
         breath = view.getBreathing();
         environment = view.getEnvironment();
         stall.observe(breath, Util.getMillis());
-        air.tooltip(List.of(net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "空气 %.1f / %.1f L",
-                breath.getAirLiters(), breath.getCapacityLiters()))));
-        double remainingRatio = breath.getAutomatic() ? breath.getStaminaRatio()
-                : Math.min(breath.getStaminaRatio(), breath.getAttentionRatio());
-        reserve.tooltip(List.of(
-                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "维持 %.0f%%", remainingRatio * 100)),
-                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "横膈肌耐力 %.0f%%", breath.getStaminaRatio() * 100)),
-                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "精力 %.0f%%", breath.getAttentionRatio() * 100))));
-
-        // 每个账户各计一次；在途占用目的容量，不能再增加最大值。
-        BodySnapshot body = view.getBody();
-        double totalQi = QiDisplay.total(body);
-        double maximumQi = body.getStructure().getMeridiansList().stream()
-                .mapToDouble(meridian -> meridian.getLumenVolume() + meridian.getWallVolume()).sum();
-        maximumQi += body.getStructure().getOrgansList().stream().mapToDouble(OrganDefinition::getVolumeCapacity).sum();
-        // 将尚未入脉的实际缓存和器官出口在途单独列出，方便区分捕获成功与配送等待。
-        double bufferedQi = body.getOrganStatesList().stream()
-                .filter(organ -> breath.getOrganIdsList().contains(organ.getId()))
-                .flatMap(organ -> organ.getBuffer().getEntriesList().stream()).mapToDouble(Qi::getAmount).sum();
-        var outputPorts = body.getStructure().getOrgansList().stream()
-                .filter(organ -> breath.getOrganIdsList().contains(organ.getId()))
-                .flatMap(organ -> organ.getPortsList().stream()).map(Port::getId).toList();
-        var outputRoutes = body.getStructure().getConnectionsList().stream()
-                .filter(route -> outputPorts.contains(route.getFrom())).map(Connection::getId).toList();
-        double inTransitQi = body.getTransitsList().stream()
-                .filter(transit -> outputRoutes.contains(transit.getConnectionId()))
-                .flatMap(transit -> transit.getCargo().getEntriesList().stream()).mapToDouble(Qi::getAmount).sum();
-        var qiDetails = new java.util.ArrayList<net.minecraft.network.chat.Component>(List.of(
-                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "本次连接摄入灵气 %.2f 元", breath.getAbsorbedQi())),
-                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "炼化后累计入脉 %.2f 元", breath.getStoredQi())),
-                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "呼吸器官缓存 %.2f 元 · 运往经脉 %.2f 元", bufferedQi, inTransitQi)),
-                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "当前经脉内腔 %.2f 元", QiDisplay.lumen(body))),
-                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "身体总真元量 %.2f 元", totalQi)),
-                net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT, "最大真元量 %.2f 元", maximumQi))));
-
-        String visibleError = error;
-        if (visibleError.isEmpty() && breath.getFailureValue() != 0) {
-            visibleError = UiErrors.gatheringFailure(breath.getFailure());
-        }
+        air.tooltip(BreathingTips.air(breath));
+        reserve.tooltip(BreathingTips.reserve(breath));
+        var qiDetails = BreathingTips.qi(view);
+        String visibleError = BreathingTips.blocked(breath, error);
         String feedback = breath.getStatus();
         if (!visibleError.isEmpty()) {
             feedback = visibleError;

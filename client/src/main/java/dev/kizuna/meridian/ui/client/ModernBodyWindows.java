@@ -71,6 +71,9 @@ final class ModernBodyWindows {
     private void registerInspections(ClientBindings bindings) {
         // 体表沿用旧版检视的窗口类型和未读残卷时的锁定通知；另外三个入口沿用内观权限。
         bindings.window(BodyFeature.SURFACE.type, (owner, w) -> createBodyWindow(w, InspectionSection.SURFACE));
+        // 吐纳窗口的开关、锁定提示和旧版走同一段，只有正文换成新版的排法。
+        bindings.window(BodyFeature.BREATH.type, (owner, w) -> module.breathingWindow(w, (scene, sender) ->
+                new ModernCultivationPanel(scene, sender, new KeyedRoom(w.key()))));
         bindings.windowMenu(BodyFeature.SURFACE.type, window -> surfaceMenu());
         bindings.featureAccess(BodyFeature.MUSCLE.id, ClientProgression::canInspect);
         bindings.window(BodyFeature.MUSCLE.type, (owner, w) -> createBodyWindow(w, InspectionSection.MUSCLES));
@@ -211,7 +214,7 @@ final class ModernBodyWindows {
         }
         var extension = MeridianSceneExtension.required();
         var created = new ModernSurfacePanel(opened, () -> extension.surfaceReadout(module.snapshot()),
-                new WindowRoom(openedKey));
+                new KeyedRoom(openedKey));
         surface = created;
         window.scope().addCleanup(() -> {
             if (surface == created) {
@@ -221,34 +224,22 @@ final class ModernBodyWindows {
         return created.root();
     }
 
-    /** 体表窗口的正文向它所在的窗口要地方；窗口已经够大就不动。 */
-    private final class WindowRoom implements ModernSurfacePanel.Room {
+    /** 窗口正文向它所在的窗口要地方；玩家自己定过尺寸的窗口由框架拒绝。 */
+    private final class KeyedRoom implements WindowRoom {
         private final WindowKey key;
 
-        WindowRoom(WindowKey key) {
+        KeyedRoom(WindowKey key) {
             this.key = key;
         }
 
         @Override
-        public void atLeast(int width, int height) {
-            var windows = module.runtime().workspace().windows();
-            var current = windows.snapshot().stream().filter(state -> state.key().equals(key)).findFirst();
-            if (current.isEmpty()) {
-                return;
-            }
-            var bounds = current.get().bounds();
-            int nextWidth = Math.max(bounds.width(), width);
-            int nextHeight = Math.max(bounds.height(), height);
-            if (nextWidth != bounds.width() || nextHeight != bounds.height()) {
-                windows.resize(key, Integer.toString(nextWidth), Integer.toString(nextHeight));
-            }
+        public void content(int width, int height) {
+            module.runtime().fitContent(key, width, height);
         }
 
         @Override
-        public void taller(int pixels) {
-            var windows = module.runtime().workspace().windows();
-            windows.snapshot().stream().filter(state -> state.key().equals(key)).findFirst()
-                    .ifPresent(state -> atLeast(state.bounds().width(), state.bounds().height() + pixels));
+        public void frame(int width, int height) {
+            module.runtime().workspace().windows().fit(key, width, height);
         }
     }
 
@@ -300,9 +291,6 @@ final class ModernBodyWindows {
 
     void update(BodySnapshot snapshot) {
         inspection.values().forEach(opened -> opened.update(snapshot));
-        if (surface != null) {
-            surface.update();
-        }
     }
 
     void progressChanged() {

@@ -48,6 +48,8 @@ public final class InnerVisionClientTest implements ClientModInitializer {
             new HudColumnJourney().register();
         } else if (System.getProperty("surface.width") != null) {
             new SurfaceWindowJourney().register();
+        } else if (System.getProperty("breath.width") != null) {
+            new BreathWindowJourney().register();
         } else if (System.getProperty("content.width") != null) {
             new ContentWindowJourney().register();
         } else {

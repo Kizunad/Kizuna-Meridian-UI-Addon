@@ -122,6 +122,10 @@ loom {
             client()
             source sourceSets.auraTest
             runDir 'build/aura-emblem-test'
+            // -PuiVersion=classic|modern 点名跑哪一版界面；不写就是缺省的那一版。
+            if (project.hasProperty('uiVersion')) {
+                property 'meridian.uiVersion', project.property('uiVersion').toString()
+            }
             programArgs '--quickPlaySingleplayer', 'aura-emblem-test', '--width', '1280', '--height', '960'
         }
     }
@@ -302,6 +306,10 @@ loom {
                 source sourceSets.breathTest
                 runDir "build/breath-${scene}-test"
                 property 'meridian.breathScene', scene
+                // -PuiVersion=classic|modern 点名跑哪一版界面；不写就是缺省的那一版。
+                if (project.hasProperty('uiVersion')) {
+                    property 'meridian.uiVersion', project.property('uiVersion').toString()
+                }
                 programArgs '--quickPlaySingleplayer', "breath-${scene}-test",
                         '--width', '1280', '--height', '960'
             }

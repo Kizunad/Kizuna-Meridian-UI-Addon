@@ -1,6 +1,7 @@
 package dev.kizuna.meridian.ui.client;
 
 import dev.kizuna.inventoryui.client.ClientModule;
+import dev.kizuna.inventoryui.workspace.UiVersion;
 import io.wispforest.owo.ui.core.UIComponent;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
@@ -17,6 +18,8 @@ final class BreathClipTools {
     /** 运行任务用这个系统属性点名要拍哪个场景；没写就是攒五行那个。 */
     private static final String SCENE_PROPERTY = "meridian.breathScene";
     private static final String DEFAULT_SCENE = "element";
+    /** 运行任务用这个系统属性点名跑哪一版界面；没写就是缺省的那一版。 */
+    private static final String VERSION_PROPERTY = "meridian.uiVersion";
 
     private BreathClipTools() {
         // 只有静态方法。
@@ -25,6 +28,10 @@ final class BreathClipTools {
     static boolean selected(String scene) {
         // 两个场景的入口都会被加载，各自只在点到自己时动手。
         return scene.equals(System.getProperty(SCENE_PROPERTY, DEFAULT_SCENE));
+    }
+
+    static UiVersion version() {
+        return UiVersion.of(System.getProperty(VERSION_PROPERTY));
     }
 
     static BodyUiModule module() {
