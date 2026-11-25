@@ -115,7 +115,7 @@ final class MeridianWindows {
                 return new LockedNotice(extension.title(), extension.lockedReason());
             }
             if (scene == null || body == null) {
-                return UIComponents.label(Component.literal(UiErrors.MISSING_BODY));
+                return UIComponents.label(Component.literal(UiErrors.missingBody()));
             }
             practice = new MeridianPanel(scene, body, selected -> {}, () -> {}, MeridianPanel.Mode.PRACTICE);
             practiceKey = openedKey;
@@ -155,7 +155,7 @@ final class MeridianWindows {
             ClientProgression.requireCultivation();
             runtime = owner;
             if (scene == null || body == null) {
-                return UIComponents.label(Component.literal(UiErrors.MISSING_BODY));
+                return UIComponents.label(Component.literal(UiErrors.missingBody()));
             }
             panel = new MeridianPanel(scene, body, this::select, this::operate);
             panel.actions(availableActions());
@@ -287,11 +287,11 @@ final class MeridianWindows {
     private String caption() {
         // 同一按钮为自己的进行中任务提供显式暂停。
         if (!pending.isEmpty() || awaitingOperationRefresh) {
-            return "等待确认…";
+            return WindowText.get("action.confirm", "等待确认…");
         }
         MeridianOperationView view = chosen();
         if (view == null) {
-            return "暂无可用操作";
+            return WindowText.get("action.none", "暂无可用操作");
         }
         return view.getActionLabel();
     }
@@ -396,8 +396,8 @@ final class MeridianWindows {
         MeridianOperationView choice = chosen();
         if (choice == null) {
             choice = OpeningCards.summary(body, selected.getTargetId()).toBuilder()
-                    .setStatus("暂无可用操作")
-                    .setHint(UiErrors.OPENING_UNAVAILABLE)
+                    .setStatus(WindowText.get("action.none", "暂无可用操作"))
+                    .setHint(UiErrors.openingUnavailable())
                     .build();
         }
         operation.show(selected.getDisplayName(), choice, error);
@@ -410,14 +410,17 @@ final class MeridianWindows {
         }
         var actions = new ArrayList<MeridianAction>();
         if (ClientProgression.canGather()) {
-            actions.add(windowAction("cultivation", "吐纳", "breathing", "打开独立吐纳窗口。"));
+            actions.add(windowAction("cultivation", WindowText.get("action.breathing", "吐纳"), "breathing",
+                    WindowText.get("action.breathing_hint", "打开独立吐纳窗口。")));
         }
         var provider = MeridianSceneExtension.required();
         if (ClientProgression.canCultivate() && provider.lockedReason().isEmpty()) {
-            actions.add(windowAction("practice", "周天", "circulation", "打开独立周天窗口。"));
+            actions.add(windowAction("practice", WindowText.get("action.circulation", "周天"), "circulation",
+                    WindowText.get("action.circulation_hint", "打开独立周天窗口。")));
         }
         if (canOpenOperation()) {
-            actions.add(windowAction("meridian_operation", "开脉", "opening", "选择当前可开拓的经脉。"));
+            actions.add(windowAction("meridian_operation", WindowText.get("action.opening", "开脉"), "opening",
+                    WindowText.get("action.opening_hint", "选择当前可开拓的经脉。")));
         }
         actions.addAll(provider.actions(body));
         return List.copyOf(actions);
@@ -487,10 +490,15 @@ final class MeridianWindows {
         var availableViews = new ArrayList<MeridianOperationView>();
         for (MeridianOperationView view : operations.views(body, selected.getTargetId())) {
             if (view.getId().startsWith("meridian:opening/") && !openingConnected) {
-                view = view.toBuilder().setEnabled(false).setStatus("操作连接不可用")
-                        .setHint(UiErrors.OPENING_UNAVAILABLE).build();
+                var disconnected = view.toBuilder()
+                        .setEnabled(false /* enabled */)
+                        .setStatus(WindowText.get("action.disconnected", "操作连接不可用"))
+                        .setHint(UiErrors.openingUnavailable())
+                        .build();
+                availableViews.add(disconnected);
+            } else {
+                availableViews.add(view);
             }
-            availableViews.add(view);
         }
         return List.copyOf(availableViews);
     }
@@ -511,7 +519,7 @@ final class MeridianWindows {
         // 多来源显示命名空间，避免同名功法无法区分；选择本身没有资源副作用。
         MeridianOperationView view = chosen();
         if (view == null) {
-            return "暂无操作";
+            return WindowText.get("action.empty", "暂无操作");
         }
         String title = view.getTitle();
         if (choices().size() > 1) {
@@ -542,7 +550,7 @@ final class MeridianWindows {
                 && System.nanoTime() - sentAt > REQUEST_TIMEOUT_NANOS) {
             pending = "";
             awaitingOperationRefresh = false;
-            error = UiErrors.OPENING_TIMEOUT;
+            error = WindowText.get("notice.opening_timeout", UiErrors.OPENING_TIMEOUT);
             show();
         }
     }

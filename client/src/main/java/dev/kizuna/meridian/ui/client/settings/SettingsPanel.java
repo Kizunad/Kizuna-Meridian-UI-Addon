@@ -1,5 +1,7 @@
 package dev.kizuna.meridian.ui.client.settings;
 
+import static dev.kizuna.meridian.ui.client.WindowText.get;
+
 import dev.kizuna.inventoryui.client.WindowInputHandler;
 import dev.kizuna.meridian.ui.api.settings.SettingsPageCatalog;
 import dev.kizuna.meridian.ui.api.settings.SettingsPageContext;
@@ -52,12 +54,12 @@ final class SettingsPanel extends FlowLayout implements WindowInputHandler, Auto
         // 不自动保存、不静默抛弃，选择仍停留在旧页面。
         var runtime = context.runtime();
         confirmation.clearChildren();
-        confirmation.child(SettingsWidgets.label(runtime, "当前页有未保存修改"));
-        confirmation.child(SettingsWidgets.button(runtime, "放弃修改并切换", () -> {
+        confirmation.child(SettingsWidgets.label(runtime, get("settings.unsaved", "当前页有未保存修改")));
+        confirmation.child(SettingsWidgets.button(runtime, get("settings.discard", "放弃修改并切换"), () -> {
             navigation.discardAndSwitch();
             showPage();
         }).id("settings-discard"));
-        confirmation.child(SettingsWidgets.button(runtime, "继续编辑", () -> {
+        confirmation.child(SettingsWidgets.button(runtime, get("settings.edit", "继续编辑"), () -> {
             navigation.keepEditing();
             confirmation.clearChildren();
         }).id("settings-keep"));

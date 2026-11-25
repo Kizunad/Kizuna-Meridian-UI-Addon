@@ -37,7 +37,12 @@ dependencies {
     localRuntime libs.antlr.runtime
 }
 
-test { useJUnit() }
+test {
+    useJUnit()
+    systemProperty 'meridian.ui.testResources', sourceSets.main.output.resourcesDir.absolutePath
+    workingDir layout.buildDirectory.dir('test-runtime')
+    doFirst { workingDir.mkdirs() }
+}
 processResources {
     inputs.property 'version', project.version
     def preserveJsonEscapes = true
@@ -71,6 +76,13 @@ loom {
             client()
             source sourceSets.clientTest
             runDir "build/inner-vision-test"
+            if (project.hasProperty('uiVersion')) {
+                property 'meridian.uiVersion', project.property('uiVersion').toString()
+            }
+            if (project.hasProperty('layoutWidth')) {
+                property 'layout.width', project.property('layoutWidth').toString()
+                property 'layout.language', providers.gradleProperty('layoutLanguage').getOrElse('zh_cn')
+            }
             programArgs "--quickPlaySingleplayer", "inner-vision-test", "--width", "1280", "--height", "960"
         }
     }
@@ -89,6 +101,16 @@ tasks.named("runInnerVisionTest") {
         def options = layout.buildDirectory.file("inner-vision-test/options.txt").get().asFile
         options.parentFile.mkdirs()
         options.text = 'onboardAccessibility:false\n'
+        if (project.hasProperty('layoutWidth') || project.hasProperty('contentWidth')) {
+            // 中文实机图要让资源管理器在启动时加载中文，单改游戏内的选项字段不会刷新语言表。
+            def language = providers.gradleProperty('layoutLanguage').getOrElse('zh_cn')
+            options.append("lang:${language}\n")
+            def pack = systemProperties['layout.resourcePack']
+            if (pack) {
+                def selected = groovy.json.JsonOutput.toJson(['vanilla', 'fabric', "file/${pack}"])
+                options.append("resourcePacks:${selected}\n")
+            }
+        }
         if (System.getProperty('content.width') != null) {
             def preferences = layout.buildDirectory
                     .file('inner-vision-test/config/kizuna-inventory-ui.json').get().asFile
@@ -130,7 +152,9 @@ loom {
             if (project.hasProperty('uiVersion')) {
                 property 'meridian.uiVersion', project.property('uiVersion').toString()
             }
-            programArgs '--quickPlaySingleplayer', 'aura-emblem-test', '--width', '1280', '--height', '960'
+            def width = providers.gradleProperty('auraWidth').getOrElse('1280')
+            def height = providers.gradleProperty('auraHeight').getOrElse('960')
+            programArgs '--quickPlaySingleplayer', 'aura-emblem-test', '--width', width, '--height', height
         }
     }
 }

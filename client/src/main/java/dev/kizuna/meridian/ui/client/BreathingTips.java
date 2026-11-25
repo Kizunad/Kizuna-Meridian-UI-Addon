@@ -17,20 +17,23 @@ final class BreathingTips {
 
     /** 肺里现在有多少升空气、最多多少升。 */
     static List<Component> air(BreathingView breath) {
-        return List.of(Component.literal(String.format(Locale.ROOT, "空气 %.1f / %.1f L",
-                breath.getAirLiters(), breath.getCapacityLiters())));
+        // 升数保留一位小数，两版沿用相同精度。
+        return List.of(line("air", "空气 %s / %s L",
+                String.format(Locale.ROOT, "%.1f", breath.getAirLiters()),
+                String.format(Locale.ROOT, "%.1f", breath.getCapacityLiters())));
     }
 
     /** 还能维持多久，以及耐力、精力各剩多少；自动吐纳只看耐力。 */
     static List<Component> reserve(BreathingView breath) {
+        // 自动吐纳只取呼吸耐力，手动还要受精力限制。
         double remaining = breath.getStaminaRatio();
         if (!breath.getAutomatic()) {
             remaining = Math.min(breath.getStaminaRatio(), breath.getAttentionRatio());
         }
         return List.of(
-                Component.literal(String.format(Locale.ROOT, "维持 %.0f%%", remaining * PERCENT)),
-                Component.literal(String.format(Locale.ROOT, "横膈肌耐力 %.0f%%", breath.getStaminaRatio() * PERCENT)),
-                Component.literal(String.format(Locale.ROOT, "精力 %.0f%%", breath.getAttentionRatio() * PERCENT)));
+                line("reserve", "维持 %s", percent(remaining)),
+                line("diaphragm", "横膈肌耐力 %s", percent(breath.getStaminaRatio())),
+                line("attention", "精力 %s", percent(breath.getAttentionRatio())));
     }
 
     /** 纳入量的总账，返回的列表可以再往后接行。 */
@@ -55,13 +58,28 @@ final class BreathingTips {
                 .filter(transit -> outputRoutes.contains(transit.getConnectionId()))
                 .flatMap(transit -> transit.getCargo().getEntriesList().stream()).mapToDouble(Qi::getAmount).sum();
         return new ArrayList<>(List.of(
-                Component.literal(String.format(Locale.ROOT, "本次连接摄入灵气 %.2f 元", breath.getAbsorbedQi())),
-                Component.literal(String.format(Locale.ROOT, "炼化后累计入脉 %.2f 元", breath.getStoredQi())),
-                Component.literal(String.format(Locale.ROOT, "呼吸器官缓存 %.2f 元 · 运往经脉 %.2f 元",
-                        bufferedQi, inTransitQi)),
-                Component.literal(String.format(Locale.ROOT, "当前经脉内腔 %.2f 元", QiDisplay.lumen(body))),
-                Component.literal(String.format(Locale.ROOT, "身体总真元量 %.2f 元", totalQi)),
-                Component.literal(String.format(Locale.ROOT, "最大真元量 %.2f 元", maximumQi))));
+                line("absorbed", "本次连接摄入灵气 %s 元", amount(breath.getAbsorbedQi())),
+                line("stored", "炼化后累计入脉 %s 元", amount(breath.getStoredQi())),
+                line("buffer", "呼吸器官缓存 %s 元 · 运往经脉 %s 元",
+                        amount(bufferedQi), amount(inTransitQi)),
+                line("lumen", "当前经脉内腔 %s 元", amount(QiDisplay.lumen(body))),
+                line("total", "身体总真元量 %s 元", amount(totalQi)),
+                line("maximum", "最大真元量 %s 元", amount(maximumQi))));
+    }
+
+    private static String amount(double value) {
+        // 先固定显示精度，再交给语言模板排版。
+        return String.format(Locale.ROOT, "%.2f", value);
+    }
+
+    private static String percent(double ratio) {
+        // 两项余力用同一百分比精度，便于比较。
+        return String.format(Locale.ROOT, "%.0f%%", ratio * PERCENT);
+    }
+
+    private static Component line(String key, String original, String... readings) {
+        // 在客户端语言确定后填入已经格式化的读数。
+        return Component.literal(WindowText.get("breath.tip." + key, original, (Object[]) readings));
     }
 
     /** 这会儿该告诉玩家的受阻原因：请求被拒的那句优先，其次是呼吸视图报的；都没有是空串。 */

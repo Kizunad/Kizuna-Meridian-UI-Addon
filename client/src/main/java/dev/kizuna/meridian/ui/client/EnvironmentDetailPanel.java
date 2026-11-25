@@ -30,9 +30,10 @@ final class EnvironmentDetailPanel extends FlowLayout {
     void update(GatheringEnvironment environment) {
         // 还没收到环境视图时说明原因，不显示猜出来的数。
         if (environment == null) {
-            lines.text(Component.literal("还没有收到当地灵气的读数。打开吐纳窗口后就有。"));
+            String waiting = WindowText.get("aura.waiting", "还没有收到当地灵气的读数。打开吐纳窗口后就有。");
+            lines.text(Component.literal(waiting));
             return;
         }
-        lines.text(Component.literal(String.join("\n", EnvironmentEmblem.details(environment))));
+        lines.text(Component.literal(String.join("\n", EnvironmentEmblem.details(environment, WindowText.current()))));
     }
 }

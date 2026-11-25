@@ -29,7 +29,7 @@ final class LockedNotice extends BaseUIComponent {
         // 常规字号左对齐；原因按可用宽度折行，保留寻找残卷的信息。
         var font = Minecraft.getInstance().font;
         int textWidth = Math.max(1, width - PADDING * 2);
-        String heading = font.plainSubstrByWidth(title + "尚未解锁", textWidth);
+        String heading = font.plainSubstrByWidth(WindowText.get("notice.locked", "%s尚未解锁", title), textWidth);
         context.text(font, heading, x + PADDING, y + PADDING, MeridianTheme.color(ThemeTokens.TEXT),
                 false /* shadow */);
         var lines = font.split(Component.literal(reason), textWidth);

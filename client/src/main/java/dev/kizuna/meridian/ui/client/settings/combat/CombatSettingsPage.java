@@ -1,5 +1,7 @@
 package dev.kizuna.meridian.ui.client.settings.combat;
 
+import static dev.kizuna.meridian.ui.client.WindowText.get;
+
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.kizuna.meridian.combat.core.CombatStanceSettings;
 import dev.kizuna.meridian.combat.fabric.client.CombatSettingsAccess;
@@ -52,24 +54,24 @@ public final class CombatSettingsPage implements SettingsPageSession {
         lock = baseline.viewLock();
         root = UIModelLoader.get(Identifier.fromNamespaceAndPath("meridian_ui", "settings"))
                 .expandTemplate(FlowLayout.class, "combat-settings", Map.of());
-        root.child(SettingsWidgets.label(runtime, "Combat 姿态设置"));
+        root.child(SettingsWidgets.label(runtime, get("settings.stance", "Combat 姿态设置")));
         lockButton = button("combat-lock", "", this::toggleLock);
         refreshLock();
         addKey(CombatSettingsAccess.Action.LOCK_VIEW);
         addPreviewButton();
-        root.child(SettingsWidgets.label(runtime, "Auto Face Target"));
+        root.child(SettingsWidgets.label(runtime, get("settings.face", "Auto Face Target")));
         addKey(CombatSettingsAccess.Action.FACE_TARGET);
-        root.child(SettingsWidgets.label(runtime, "自动解除距离（1–128 格）"));
+        root.child(SettingsWidgets.label(runtime, get("settings.radius", "自动解除距离（1–128 格）")));
         radius = UIComponents.textBox(Sizing.fill(SettingsWidgets.FULL), Double.toString(baseline.targetRadius()));
         radius.id("combat-radius");
         root.child(radius);
         feedback = SettingsWidgets.label(runtime, "");
         feedback.horizontalSizing(Sizing.fill(SettingsWidgets.FULL));
         root.child(feedback);
-        button("combat-save", "保存", this::save);
-        button("combat-cancel", "取消", context.closeWindow());
+        button("combat-save", get("settings.save", "保存"), this::save);
+        button("combat-cancel", get("settings.cancel", "取消"), context.closeWindow());
         if (!snapshot.writable()) {
-            message("原配置已保护，当前不可持久化；保存不会覆盖原件");
+            message(get("settings.protected", "原配置已保护，当前不可持久化；保存不会覆盖原件"));
         }
     }
 
@@ -93,8 +95,9 @@ public final class CombatSettingsPage implements SettingsPageSession {
 
     private void refreshLock() {
         // OFF/ON 对应持久化偏好，不表示当前有有效战斗会话。
-        lockButton.setMessage(Component.literal("Lock current view — " + lock));
-        lockButton.tooltip(Component.literal("开启：鼠标带动视角和人物朝向；关闭：独立绕看。目标锁定优先。"));
+        String key = lock == CombatStanceSettings.ViewLock.ON ? "settings.lock_on" : "settings.lock_off";
+        lockButton.setMessage(Component.literal(get(key, "Lock current view — %s", lock)));
+        lockButton.tooltip(Component.literal(get("settings.lock_hint", "开启：鼠标带动视角和人物朝向；关闭：独立绕看。目标锁定优先。")));
     }
 
     private void addKey(CombatSettingsAccess.Action action) {
@@ -106,15 +109,16 @@ public final class CombatSettingsPage implements SettingsPageSession {
         keyBaseline.put(action, key);
         var row = UIContainers.horizontalFlow(Sizing.fill(SettingsWidgets.FULL), Sizing.content());
         row.gap(SettingsWidgets.GAP);
-        var button = SettingsWidgets.button(runtime, "快捷键：" + key.getDisplayName().getString(), () -> {
+        var button = SettingsWidgets.button(runtime, keyLabel(key), () -> {
             recording = action;
-            message("按键录入中；Esc 取消，Backspace 清除");
+            message(get("settings.recording", "按键录入中；Esc 取消，Backspace 清除"));
             CombatSettingsAccess.clearInput();
         });
         button.id("combat-key-" + name);
         button.horizontalSizing(Sizing.expand());
         keyButtons.put(action, button);
-        var clear = SettingsWidgets.button(runtime, "清除", () -> setKey(action, InputConstants.UNKNOWN));
+        var clear = SettingsWidgets.button(runtime, get("settings.clear", "清除"),
+                () -> setKey(action, InputConstants.UNKNOWN));
         clear.id("combat-clear-" + name);
         clear.horizontalSizing(Sizing.content());
         row.child(button);
@@ -122,13 +126,18 @@ public final class CombatSettingsPage implements SettingsPageSession {
         root.child(row);
     }
 
+    private static String keyLabel(InputConstants.Key key) {
+        // 使用玩家当前键位的译名。
+        return get("settings.key", "快捷键：%s", key.getDisplayName().getString());
+    }
+
     private void addPreviewButton() {
         // 架势外只显示原因，不自动切换玩家模式。
         var runtime = context.runtime();
         String reason = CombatSettingsAccess.previewUnavailableReason();
         boolean available = reason.isEmpty();
-        root.child(SettingsWidgets.label(runtime, "Change Thirdperson view"));
-        var button = button("combat-preview", "调整视角", this::openPreview);
+        root.child(SettingsWidgets.label(runtime, get("settings.third_person", "Change Thirdperson view")));
+        var button = button("combat-preview", get("settings.adjust", "调整视角"), this::openPreview);
         button.active(available);
         if (!available) {
             root.child(SettingsWidgets.label(runtime, reason));
@@ -165,7 +174,7 @@ public final class CombatSettingsPage implements SettingsPageSession {
         recording = null;
         int key = event.key();
         if (key == GLFW.GLFW_KEY_ESCAPE) {
-            message("已取消快捷键录入");
+            message(get("settings.cancelled", "已取消快捷键录入"));
         } else if (key == GLFW.GLFW_KEY_BACKSPACE) {
             setKey(action, InputConstants.UNKNOWN);
         } else {
@@ -179,27 +188,27 @@ public final class CombatSettingsPage implements SettingsPageSession {
         // 冲突只提示，不在录入期间修改共享映射。
         recording = null;
         keys.put(action, key);
-        keyButtons.get(action).setMessage(Component.literal("快捷键：" + key.getDisplayName().getString()));
+        keyButtons.get(action).setMessage(Component.literal(keyLabel(key)));
         message(conflicts(action, key));
     }
 
     private String conflicts(CombatSettingsAccess.Action action, InputConstants.Key key) {
         // 同时检查本页草稿和当前原版控制表，避免第二份冲突键表。
         if (key.equals(InputConstants.UNKNOWN)) {
-            return "快捷键未绑定";
+            return get("settings.unbound", "快捷键未绑定");
         }
         for (var entry : keys.entrySet()) {
             if (entry.getKey() != action && entry.getValue().equals(key)) {
-                return "键位冲突：另一项姿态快捷键";
+                return get("settings.conflict_stance", "键位冲突：另一项姿态快捷键");
             }
         }
         var own = CombatSettingsAccess.keyMapping(action);
         for (var mapping : Minecraft.getInstance().options.keyMappings) {
             if (mapping != own && mapping.matches(key)) {
-                return "键位冲突：" + Component.translatable(mapping.getName()).getString();
+                return get("settings.conflict", "键位冲突：%s", Component.translatable(mapping.getName()).getString());
             }
         }
-        return "快捷键草稿已更新";
+        return get("settings.key_updated", "快捷键草稿已更新");
     }
 
     private void save() {
@@ -214,14 +223,14 @@ public final class CombatSettingsPage implements SettingsPageSession {
             String keysResult = saveKeys();
             message(configResult.message() + "；" + keysResult);
         } catch (IllegalArgumentException failure) {
-            message("未保存：自动解除距离须为 1–128 的有限数值");
+            message(get("settings.invalid_radius", "未保存：自动解除距离须为 1–128 的有限数值"));
         }
     }
 
     private String saveKeys() {
         // 没有编辑的映射从当前原版读取，不覆盖控制页已经提交的修改。
         if (keys.equals(keyBaseline)) {
-            return "快捷键未改动";
+            return get("settings.keys_unchanged", "快捷键未改动");
         }
         var first = keyToSave(CombatSettingsAccess.Action.LOCK_VIEW);
         var second = keyToSave(CombatSettingsAccess.Action.FACE_TARGET);

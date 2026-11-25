@@ -10,6 +10,7 @@ record IntakeCaption(String text, boolean boosted) {
     private static final double VISIBLE_DELTA = 0.005;
 
     static Optional<IntakeCaption> of(BreathingView breath) {
+        // 小到显示不出差别的倍率不占一行。
         if (!breath.getActive() || !breath.hasIntakeMultiplier()) {
             return Optional.empty();
         }
@@ -17,7 +18,8 @@ record IntakeCaption(String text, boolean boosted) {
         if (Math.abs(multiplier - 1) <= VISIBLE_DELTA) {
             return Optional.empty();
         }
-        String text = String.format(Locale.ROOT, "摄入 ×%.2f", multiplier);
+        String amount = String.format(Locale.ROOT, "%.2f", multiplier);
+        String text = WindowText.get("breath.multiplier", "摄入 ×%s", amount);
         return Optional.of(new IntakeCaption(text, multiplier > 1));
     }
 }

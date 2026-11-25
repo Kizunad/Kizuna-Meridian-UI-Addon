@@ -65,11 +65,11 @@ final class BreathingSession {
     String automaticDescription() {
         // 暂停线、恢复线与效率来自服务端视图，客户端不写死自动规则。
         BreathingView breath = view.getBreathing();
-        return String.format(Locale.ROOT,
-                "低于%.0f%%暂停，恢复至%.0f%%继续。\n仅耗呼吸耐力，效率为手动的%.0f%%。",
-                breath.getAutomaticMinimumStaminaRatio() * FULL,
-                breath.getAutomaticResumeStaminaRatio() * FULL,
-                breath.getAutomaticCaptureEfficiency() * FULL);
+        String minimum = String.format(Locale.ROOT, "%.0f%%", breath.getAutomaticMinimumStaminaRatio() * FULL);
+        String resume = String.format(Locale.ROOT, "%.0f%%", breath.getAutomaticResumeStaminaRatio() * FULL);
+        String efficiency = String.format(Locale.ROOT, "%.0f%%", breath.getAutomaticCaptureEfficiency() * FULL);
+        return WindowText.get("breath.auto_help", "低于%s暂停，恢复至%s继续。\n仅耗呼吸耐力，效率为手动的%s。",
+                minimum, resume, efficiency);
     }
 
     void update(GatheringView next, boolean nextPending) {
@@ -85,12 +85,12 @@ final class BreathingSession {
     String actionLabel() {
         // 教学确认与练习开关使用一个明确入口，不在场景内堆放表单。
         if (tutorial) {
-            return "开始引导";
+            return WindowText.get("breath.tutorial", "开始引导");
         }
         if (view != null && view.getBreathing().getActive()) {
-            return "结束吐纳";
+            return WindowText.get("breath.stop", "结束吐纳");
         }
-        return "开始吐纳";
+        return WindowText.get("breath.start", "开始吐纳");
     }
 
     boolean canAct() {

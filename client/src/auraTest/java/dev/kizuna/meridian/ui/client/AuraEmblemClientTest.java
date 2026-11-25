@@ -188,6 +188,15 @@ public final class AuraEmblemClientTest implements ClientModInitializer {
         checkState(text.contains("总量") && text.contains("浓度") && text.contains("无属性") && text.contains("分档"),
                 "小窗里的明细不全：" + text);
         capture(client, "aura-detail-window.png");
+        if (InventoryUiClient.runtime().uiVersion() == UiVersion.MODERN) {
+            // 这两档屏幕均放得下两扇窗，整块正文应可同时阅读。
+            var parent = window.bounds();
+            var detail = opened.bounds();
+            System.out.println("AURA_PAIR " + parent + " " + detail);
+            checkState(parent.x() + parent.width() <= detail.x() || detail.x() + detail.width() <= parent.x()
+                    || parent.y() + parent.height() <= detail.y() || detail.y() + detail.height() <= parent.y(),
+                    "此地灵气遮住吐纳窗 %s %s", parent, detail);
+        }
         InventoryUiClient.runtime().workspace().windows().close(opened.key());
         next(Stage.COMPACT);
     }

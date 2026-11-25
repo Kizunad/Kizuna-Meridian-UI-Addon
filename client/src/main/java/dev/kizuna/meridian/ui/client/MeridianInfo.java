@@ -28,7 +28,7 @@ final class MeridianInfo extends BaseUIComponent {
             guide.lines().forEach(line -> lines.add(Component.literal(line)));
             lines.add(Component.empty());
         }
-        KEYS.lines().forEach(line -> lines.add(Component.literal(line)));
+        WindowText.get("action.controls", KEYS).lines().forEach(line -> lines.add(Component.literal(line)));
         dataHelp.lines().forEach(line -> lines.add(Component.literal(line)));
         return java.util.List.copyOf(lines);
     }

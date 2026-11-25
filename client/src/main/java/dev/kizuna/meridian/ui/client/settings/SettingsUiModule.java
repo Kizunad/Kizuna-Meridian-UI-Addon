@@ -1,6 +1,7 @@
 package dev.kizuna.meridian.ui.client.settings;
 
 import dev.kizuna.inventoryui.client.ClientBindings;
+import dev.kizuna.meridian.ui.client.WindowText;
 import dev.kizuna.inventoryui.client.ClientModule;
 import dev.kizuna.inventoryui.client.ClientRuntime;
 import dev.kizuna.inventoryui.client.WorkspaceScreen;
@@ -86,10 +87,12 @@ public final class SettingsUiModule implements ClientModule {
         var client = Minecraft.getInstance();
         var module = instance;
         if (!client.isSameThread() || module == null || module.runtime == null || client.level == null) {
-            return new MeridianSettings.Result(MeridianSettings.Status.UNAVAILABLE, "当前无有效客户端工作区");
+            String reason = WindowText.get("settings.workspace_unavailable", "当前无有效客户端工作区");
+            return new MeridianSettings.Result(MeridianSettings.Status.UNAVAILABLE, reason);
         }
         if (pageId != null && module.catalog.find(pageId) == null) {
-            return new MeridianSettings.Result(MeridianSettings.Status.UNKNOWN_PAGE, "未知设置页：" + pageId);
+            String reason = WindowText.get("settings.unknown_page", "未知设置页：%s", pageId);
+            return new MeridianSettings.Result(MeridianSettings.Status.UNKNOWN_PAGE, reason);
         }
         return module.openPage(pageId);
     }

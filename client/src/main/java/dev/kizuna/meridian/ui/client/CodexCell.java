@@ -1,5 +1,7 @@
 package dev.kizuna.meridian.ui.client;
 
+import static dev.kizuna.meridian.ui.client.WindowText.get;
+
 import dev.kizuna.inventoryui.theme.ThemeTokens;
 import io.wispforest.owo.ui.base.BaseUIComponent;
 import io.wispforest.owo.ui.core.CursorStyle;
@@ -15,6 +17,9 @@ import static dev.kizuna.meridian.ui.client.CombatBookStyle.paper;
 final class CodexCell extends BaseUIComponent {
     static final int SIZE = 22;
     private static final int ITEM = 16;
+    private static final int MARK_INSET = 8;
+    private static final int MARK_TOP_OFFSET = 2;
+    private static final int MARK_COLOR = 0xFFFFFFFF;
     private static final int VEIL = 0xD8;
     private static final int VEIL_FADE = 4;
     private static final double PULSE_MILLIS = 300.0;
@@ -71,7 +76,8 @@ final class CodexCell extends BaseUIComponent {
                     paper(ThemeTokens.INPUT_ERROR), false);
         } else if (CodexMoments.fresh(volume.id())) {
             context.fill(x + width - 9, y - 3, x + width + 3, y + 7, paper(ThemeTokens.ACCENT));
-            context.text(font, "新", x + width - 8, y - 2, 0xFFFFFFFF, false);
+            String mark = get("codex.new_mark", "新");
+            context.text(font, mark, x + width - MARK_INSET, y - MARK_TOP_OFFSET, MARK_COLOR, false /* shadow */);
         }
     }
 

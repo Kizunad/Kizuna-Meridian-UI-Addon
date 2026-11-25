@@ -38,6 +38,7 @@ public final class CompactNumbers {
 
     /** 整数读数，例如部位 HP 和周天圈数。负数表示读数还没到。 */
     public static String whole(double value) {
+        // 大额读数按万缩短，以免数字挤占相邻读数。
         if (value < 0) {
             return UNKNOWN;
         }
@@ -45,9 +46,11 @@ public final class CompactNumbers {
             return String.format(Locale.ROOT, "%.0f", value);
         }
         if (value < ONE_DECIMAL_WAN_LIMIT) {
-            return String.format(Locale.ROOT, "%.1f万", value / TEN_THOUSAND);
+            String units = String.format(Locale.ROOT, "%.1f", value / TEN_THOUSAND);
+            return WindowText.get("compact.ten_thousand", "%s万", units);
         }
-        return String.format(Locale.ROOT, "%.0f万", value / TEN_THOUSAND);
+        String units = String.format(Locale.ROOT, "%.0f", value / TEN_THOUSAND);
+        return WindowText.get("compact.ten_thousand", "%s万", units);
     }
 
     /** 受伤部位的 HP 往下取整，没满的读数不会显示成满的。 */

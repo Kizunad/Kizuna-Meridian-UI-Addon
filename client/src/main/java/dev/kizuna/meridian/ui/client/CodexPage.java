@@ -1,5 +1,7 @@
 package dev.kizuna.meridian.ui.client;
 
+import static dev.kizuna.meridian.ui.client.WindowText.get;
+
 import dev.kizuna.inventoryui.theme.ThemeTokens;
 import dev.kizuna.meridian.technique.server.TechniqueScrollCatalog.NamedTechnique;
 import io.wispforest.owo.ui.component.LabelComponent;
@@ -67,11 +69,16 @@ record CodexPage(FlowLayout page, CodexProgress progress, CodexCatalog catalog, 
     private String stateText(CodexCatalog.Volume volume, CodexProgress.State state) {
         // 已学写式数；未得写式数和境界分布；够不着写最低一式要的境界。
         return switch (state) {
-            case LEARNED -> "已学 · " + volume.techniques().size() + " 式 · "
-                    + (expanded.contains(volume.id()) ? "收起" : "展开全文");
-            case MISSING -> "未得 · " + realmSpread(volume);
-            case OUT_OF_REACH -> CodexSources.realmName(volume.minimumRealm()) + "方可施展 · "
-                    + volume.techniques().size() + " 式";
+            case LEARNED -> {
+                String toggle = get("codex.expand", "展开全文");
+                if (expanded.contains(volume.id())) {
+                    toggle = get("codex.collapse", "收起");
+                }
+                yield get("codex.learned_details", "已学 · %s 式 · %s", volume.techniques().size(), toggle);
+            }
+            case MISSING -> get("codex.missing_details", "未得 · %s", realmSpread(volume));
+            case OUT_OF_REACH -> get("codex.realm_details", "%s方可施展 · %s 式",
+                    CodexSources.realmName(volume.minimumRealm()), volume.techniques().size());
         };
     }
 
@@ -88,11 +95,12 @@ record CodexPage(FlowLayout page, CodexProgress progress, CodexCatalog catalog, 
         var counts = new TreeMap<Integer, Integer>();
         volume.techniques().forEach(named -> counts.merge(CodexCatalog.Volume.realmOf(named), 1, Integer::sum));
         if (counts.size() == 1) {
-            return volume.techniques().size() + " 式";
+            return get("codex.forms", "%s 式", volume.techniques().size());
         }
         var parts = counts.entrySet().stream()
-                .map(entry -> CodexSources.realmName(entry.getKey()) + " " + entry.getValue() + " 式").toList();
-        return String.join("、", parts);
+                .map(entry -> get("codex.realm_forms", "%s %s 式",
+                        CodexSources.realmName(entry.getKey()), entry.getValue())).toList();
+        return String.join(get("codex.separator", "、"), parts);
     }
 
     private void learned(FlowLayout block, CodexCatalog.Volume volume) {
@@ -102,7 +110,7 @@ record CodexPage(FlowLayout page, CodexProgress progress, CodexCatalog catalog, 
             String name = techniqueName(named);
             int realm = CodexCatalog.Volume.realmOf(named);
             if (realm > progress.realm()) {
-                name += "（" + CodexSources.realmName(realm) + "方可施展）";
+                name += get("codex.realm_suffix", "（%s方可施展）", CodexSources.realmName(realm));
             }
             block.child(label(name, paper(ThemeTokens.TEXT), GAP));
             String description = entry != null ? entry.getDescription() : named.description();
@@ -136,16 +144,19 @@ record CodexPage(FlowLayout page, CodexProgress progress, CodexCatalog catalog, 
                 .filter(id -> !progress.learned(id, catalog))
                 .map(id -> "《" + volume.prerequisiteNames().get(id) + "》").toList();
         if (!missing.isEmpty()) {
-            block.child(label("须先学会" + String.join("、", missing), paper(ThemeTokens.MUTED_TEXT), GAP));
+            String names = String.join(get("codex.separator", "、"), missing);
+            String hint = get("codex.prerequisites", "须先学会%s", names);
+            block.child(label(hint, paper(ThemeTokens.MUTED_TEXT), GAP));
         }
     }
 
     static String tooltip(CodexCatalog.Volume volume, CodexProgress progress) {
         // 目录格子的悬停说明：卷全名和状态。
         return switch (progress.state(volume)) {
-            case LEARNED -> volume.fullName() + "\n已学";
-            case MISSING -> volume.fullName() + "\n未得";
-            case OUT_OF_REACH -> volume.fullName() + "\n" + CodexSources.realmName(volume.minimumRealm()) + "方可施展";
+            case LEARNED -> get("codex.learned_hint", "%s\n已学", volume.fullName());
+            case MISSING -> get("codex.missing_hint", "%s\n未得", volume.fullName());
+            case OUT_OF_REACH -> get("codex.realm_hint", "%s\n%s方可施展", volume.fullName(),
+                    CodexSources.realmName(volume.minimumRealm()));
         };
     }
 

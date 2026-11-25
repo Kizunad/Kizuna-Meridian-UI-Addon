@@ -1,5 +1,7 @@
 package dev.kizuna.meridian.ui.client.settings.combat;
 
+import static dev.kizuna.meridian.ui.client.WindowText.get;
+
 import dev.kizuna.inventoryui.client.ClientRuntime;
 import dev.kizuna.inventoryui.theme.ThemeTokens;
 import dev.kizuna.meridian.combat.core.CombatCameraEdit;
@@ -39,7 +41,7 @@ public final class CombatCameraScreen extends BaseOwoScreen<FlowLayout> {
 
     CombatCameraScreen(ClientRuntime runtime, CombatSettingsAccess.Preview preview, Consumer<String> returned) {
         // 相机与配置服务属于 Combat，屏幕只管理输入事件和返回路径。
-        super(Component.literal("调整第三人称视角"));
+        super(Component.literal(get("settings.adjust_title", "调整第三人称视角")));
         this.runtime = runtime;
         this.preview = preview;
         this.returned = returned;
@@ -57,15 +59,16 @@ public final class CombatCameraScreen extends BaseOwoScreen<FlowLayout> {
         var panel = UIModelLoader.get(Identifier.fromNamespaceAndPath("meridian_ui", "settings"))
                 .expandTemplate(FlowLayout.class, "camera-preview", Map.of());
         panel.surface(Surface.flat(runtime.color(ThemeTokens.PANEL)));
-        panel.child(SettingsWidgets.label(runtime, "移动键：靠近/远离、左右平移"));
-        panel.child(SettingsWidgets.label(runtime, "跳跃/潜行键：上移/下移；Esc 取消"));
+        panel.child(SettingsWidgets.label(runtime, get("settings.camera_move", "移动键：靠近/远离、左右平移")));
+        panel.child(SettingsWidgets.label(runtime, get("settings.camera_height", "跳跃/潜行键：上移/下移；Esc 取消")));
         values = SettingsWidgets.label(runtime, "");
         feedback = SettingsWidgets.label(runtime, "");
         panel.child(values);
         panel.child(feedback);
-        panel.child(SettingsWidgets.button(runtime, "恢复默认", preview::reset).id("camera-defaults"));
-        panel.child(SettingsWidgets.button(runtime, "保存", this::save).id("camera-save"));
-        panel.child(SettingsWidgets.button(runtime, "取消", this::onClose).id("camera-cancel"));
+        var defaults = SettingsWidgets.button(runtime, get("settings.defaults", "恢复默认"), preview::reset);
+        panel.child(defaults.id("camera-defaults"));
+        panel.child(SettingsWidgets.button(runtime, get("settings.save", "保存"), this::save).id("camera-save"));
+        panel.child(SettingsWidgets.button(runtime, get("settings.cancel", "取消"), this::onClose).id("camera-cancel"));
         root.child(panel);
     }
 
@@ -77,12 +80,15 @@ public final class CombatCameraScreen extends BaseOwoScreen<FlowLayout> {
         }
         preview.step(axes(), System.nanoTime());
         var draft = preview.draft();
-        values.text(Component.literal(String.format(Locale.ROOT, "横向 %.2f　高度 %.2f　距离 %.2f",
-                draft.shoulderOffset(), draft.heightOffset(), draft.distance())));
+        String shoulder = String.format(Locale.ROOT, "%.2f", draft.shoulderOffset());
+        String height = String.format(Locale.ROOT, "%.2f", draft.heightOffset());
+        String distance = String.format(Locale.ROOT, "%.2f", draft.distance());
+        values.text(Component.literal(get("settings.camera_values", "横向 %s　高度 %s　距离 %s",
+                shoulder, height, distance)));
         if (!saveFailure.isEmpty()) {
             feedback.text(Component.literal(saveFailure));
         } else if (preview.clipped()) {
-            feedback.text(Component.literal("碰撞：相机临时拉近，保存期望距离"));
+            feedback.text(Component.literal(get("settings.camera_clipped", "碰撞：相机临时拉近，保存期望距离")));
         } else {
             feedback.text(Component.empty());
         }
@@ -146,7 +152,7 @@ public final class CombatCameraScreen extends BaseOwoScreen<FlowLayout> {
     public void tick() {
         // 先处理会话失效；重力、受击和服务端继续正常推进。
         if (!preview.active() && !finished) {
-            finish("预览已失效，未保存相机草稿");
+            finish(get("settings.preview_ended", "预览已失效，未保存相机草稿"));
         } else if (!minecraft.isWindowActive()) {
             clearHeld();
         }
@@ -159,7 +165,7 @@ public final class CombatCameraScreen extends BaseOwoScreen<FlowLayout> {
         String message = result.message();
         feedback.text(Component.literal(message));
         if (result.status() == CombatSettingsAccess.Status.SAVED) {
-            finish("相机参数已保存");
+            finish(get("settings.camera_saved", "相机参数已保存"));
         } else {
             saveFailure = message;
         }
@@ -168,7 +174,7 @@ public final class CombatCameraScreen extends BaseOwoScreen<FlowLayout> {
     @Override
     public void onClose() {
         // Esc 与取消按钮走相同返回路径，不丢父页其他草稿。
-        finish("已取消相机修改");
+        finish(get("settings.camera_cancelled", "已取消相机修改"));
     }
 
     private void finish(String result) {

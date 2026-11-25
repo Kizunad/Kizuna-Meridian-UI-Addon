@@ -44,7 +44,8 @@ final class StoredPhaseCaption {
         totals.putIfAbsent(QiPhase.FREE, 0.0);
         List<String> parts = new ArrayList<>();
         totals.forEach((phase, amount) ->
-                parts.add(String.format(Locale.ROOT, "%s %.2f", NAMES.get(phase), amount)));
+                parts.add(String.format(Locale.ROOT, "%s %.2f",
+                        WindowText.get("data.phase." + phase.name().toLowerCase(Locale.ROOT), name(phase)), amount)));
         return Optional.of(String.join(SEPARATOR, parts));
     }
 }

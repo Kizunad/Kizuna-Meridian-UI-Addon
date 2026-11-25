@@ -23,6 +23,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
 
 /**
@@ -196,12 +197,13 @@ final class ModernBodyWindows {
             }
         });
         if (!ClientProgression.canInspect()) {
-            return new LockedNotice("内观", UiErrors.INNER_VISION_LOCKED);
+            return new LockedNotice(I18n.get("meridian_ui.inspection.locked_title"),
+                    I18n.get("meridian_ui.inspection.locked_hint"));
         }
         var scene = module.scene();
         var body = module.snapshot();
         if (scene == null || body == null) {
-            return UIComponents.label(Component.literal(UiErrors.MISSING_BODY));
+            return UIComponents.label(Component.literal(UiErrors.missingBody()));
         }
         ModernBodyPanel opened = new ModernBodyPanel(scene, body, section);
         inspection.put(section, opened);

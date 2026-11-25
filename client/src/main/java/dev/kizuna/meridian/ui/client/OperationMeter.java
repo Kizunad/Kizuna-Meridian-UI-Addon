@@ -35,7 +35,10 @@ final class OperationMeter extends BaseUIComponent {
         meter = value;
         String detail = String.format(Locale.ROOT, "%s\n%.0f%%", value.getHint(), value.getFraction() * FULL);
         if (value.getIncomingFraction() > 0) {
-            detail += String.format(Locale.ROOT, " · 在途 %.0f%%", value.getIncomingFraction() * FULL);
+            String share = String.format(Locale.ROOT, "%.0f%%", value.getIncomingFraction() * FULL);
+            String incoming = WindowText.get("action.incoming", " · 在途 %s", share);
+            tooltip(Component.literal(detail + incoming));
+            return;
         }
         tooltip(Component.literal(detail));
     }
@@ -50,10 +53,10 @@ final class OperationMeter extends BaseUIComponent {
         };
         int color = MeridianTheme.color(token);
         String status = switch (meter.getState()) {
-            case METER_READY -> "已满足";
-            case METER_RUNNING -> "进行中";
-            case METER_BLOCKED -> "受阻";
-            default -> "待补足";
+            case METER_READY -> WindowText.get("action.ready", "已满足");
+            case METER_RUNNING -> WindowText.get("action.running", "进行中");
+            case METER_BLOCKED -> WindowText.get("action.blocked", "受阻");
+            default -> WindowText.get("action.waiting", "待补足");
         };
         context.drawCircle(x + MARK_LEFT, y + HEIGHT / 2, MARK_SEGMENTS, MARK_RADIUS, Color.ofArgb(color));
         var font = Minecraft.getInstance().font;

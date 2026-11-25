@@ -1,5 +1,7 @@
 package dev.kizuna.meridian.ui.client;
 
+import static dev.kizuna.meridian.ui.client.WindowText.get;
+
 import dev.kizuna.inventoryui.theme.ThemeTokens;
 import io.wispforest.owo.ui.base.BaseUIComponent;
 import io.wispforest.owo.ui.core.CursorStyle;
@@ -66,21 +68,21 @@ final class CombatBookTile extends BaseUIComponent {
                              dev.kizuna.meridian.combat.protocol.pb.CombatMessages.KnownTechnique entry) {
         // 空槽与失效槽保留不同文案，失效身份只在 tooltip 中用于辨认原配置。
         var font = Minecraft.getInstance().font;
-        String caption = "空";
-        String hint = "空槽";
+        String caption = get("combat.empty_slot_short", "空");
+        String hint = get("combat.empty_slot", "空槽");
         if (entry != null) {
             hint = name(entry).getString();
             caption = font.plainSubstrByWidth(hint, Math.max(1, width - GAP));
         } else if (!id.isEmpty()) {
             caption = "失效";
-            hint = "未学或内容已移除：" + id;
+            hint = get("combat.missing", "未学或内容已移除：%s", id);
         }
         if (number > 0) {
             caption = Integer.toString(number);
             if (number == dev.kizuna.meridian.combat.core.CombatIds.SLOT_COUNT) {
                 caption = "0";
             }
-            hint += "\n拖入功法以配置 · 右键清空";
+            hint += "\n" + get("combat.drag_hint", "拖入功法以配置 · 右键清空");
             if (entry == null && !id.isEmpty()) {
                 context.text(font, "×", x + width - GAP * 2, y + GAP,
                         paper(ThemeTokens.CONTROL_CLOSE_HOVER), false /* shadow */);

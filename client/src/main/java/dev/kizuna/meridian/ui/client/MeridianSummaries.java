@@ -40,10 +40,13 @@ final class MeridianSummaries {
     }
 
     static void breath(SummaryCanvas canvas, CompactVariant variant, BreathSummary reading) {
-        var head = List.of(main(canvas, "息 "), dim(canvas, "余力"));
+        // 短标签沿用当前语言，读数和展开窗使用同一份快照。
+        var words = WindowText.MODERN;
+        var head = List.of(main(canvas, words.format("compact.breath_prefix", "息 ")),
+                dim(canvas, words.format("compact.reserve", "余力")));
         var value = main(canvas, reading.reservePercent());
-        var air = dim(canvas, reading.airShortLabel());
-        var intake = dim(canvas, "纳 " + reading.intakeAmount());
+        var air = dim(canvas, words.format("compact.air", "气 %s", CompactNumbers.percent(reading.air())));
+        var intake = dim(canvas, words.format("compact.intake", "纳 %s", reading.intakeAmount()));
         CompactSummary.meter(canvas, variant, new CompactSummary.Meter(head, value, reading.reserve(), air, intake));
     }
 
@@ -55,11 +58,13 @@ final class MeridianSummaries {
 
     static void channels(SummaryCanvas canvas, CompactVariant variant, MeridianData.Page page) {
         var rows = page.rows();
-        String opened = "开 " + page.opened() + "/" + rows.size();
+        var words = WindowText.MODERN;
+        String opened = words.format("compact.opened", "开 %s/%s", page.opened(), rows.size());
         double capacity = page.lumen().capacity() + page.wall().capacity();
         String stored = CompactNumbers.coarse(page.meridianTotal()) + "/" + CompactNumbers.coarse(capacity);
-        CompactSummary.left(canvas, 0, 0, List.of(main(canvas, "脉 "), dim(canvas, opened)));
-        CompactSummary.right(canvas, variant.width(), 0, main(canvas, "真元 " + stored));
+        CompactSummary.left(canvas, 0, 0, List.of(main(canvas, words.format("compact.channel_prefix", "脉 ")),
+                dim(canvas, opened)));
+        CompactSummary.right(canvas, variant.width(), 0, main(canvas, words.format("compact.qi", "真元 %s", stored)));
         // 每条经脉一格；格数多到排不下时按小窗宽度均分。
         int pitch = TICK_PITCH;
         if (rows.size() * TICK_PITCH > variant.width() + 1) {

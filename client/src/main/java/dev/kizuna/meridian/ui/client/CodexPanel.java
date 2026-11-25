@@ -1,5 +1,7 @@
 package dev.kizuna.meridian.ui.client;
 
+import static dev.kizuna.meridian.ui.client.WindowText.get;
+
 import dev.kizuna.inventoryui.theme.ThemeTokens;
 import dev.kizuna.meridian.combat.fabric.client.CombatSlotAccess;
 import io.wispforest.owo.ui.component.LabelComponent;
@@ -46,6 +48,10 @@ final class CodexPanel extends FlowLayout implements AutoCloseable {
         super(Sizing.fill(FULL), Sizing.fill(FULL), Algorithm.VERTICAL);
         content = UIModelLoader.get(Identifier.fromNamespaceAndPath("meridian_ui", "codex"))
                 .expandTemplate(FlowLayout.class, "codex-book", Map.of());
+        if (WindowText.current() == WindowText.MODERN) {
+            content.childById(LabelComponent.class, "index-title")
+                    .text(Component.translatable("meridian_ui.codex.title"));
+        }
         index = content.childById(FlowLayout.class, "index");
         page = content.childById(FlowLayout.class, "page");
         index.gap(GAP);
@@ -109,7 +115,7 @@ final class CodexPanel extends FlowLayout implements AutoCloseable {
         // 两页一起重建，完成度与右页状态始终来自同一份快照。
         int learned = progress.learnedCount(catalog);
         var count = content.childById(LabelComponent.class, "index-count");
-        String text = "已得 " + learned + " / " + catalog.volumeCount() + " 卷";
+        String text = get("codex.count", "已得 %s / %s 卷", learned, catalog.volumeCount());
         count.text(Component.literal(text));
         count.color(Color.ofArgb(paper(ThemeTokens.MUTED_TEXT)));
         int textWidth = Minecraft.getInstance().font.width(text);
@@ -135,7 +141,10 @@ final class CodexPanel extends FlowLayout implements AutoCloseable {
         boolean complete = learned == book.volumes().size();
         int color = book.id().equals(selectedBook) ? paper(ThemeTokens.ACCENT) : paper(ThemeTokens.TEXT);
         row.child(fixedLabel(book.name(), color, NAME_WIDTH));
-        String countText = complete ? "齐" : learned + "/" + book.volumes().size();
+        String countText = learned + "/" + book.volumes().size();
+        if (complete) {
+            countText = get("codex.complete", "齐");
+        }
         int countColor = complete ? paper(ThemeTokens.ACCENT) : paper(ThemeTokens.MUTED_TEXT);
         row.child(fixedLabel(countText, countColor, COUNT_WIDTH));
         for (var volume : book.volumes()) {
@@ -161,7 +170,9 @@ final class CodexPanel extends FlowLayout implements AutoCloseable {
             return;
         }
         int learned = progress.learnedCount(book.get());
-        title.text(Component.literal("《" + book.get().name() + "》　" + learned + "/" + book.get().volumes().size()));
+        String heading = get("codex.book_progress", "《%s》　%s/%s", book.get().name(), learned,
+                book.get().volumes().size());
+        title.text(Component.literal(heading));
         title.color(Color.ofArgb(paper(ThemeTokens.ACCENT)));
         new CodexPage(page, progress, catalog, Math.max(1, pageWidth - SCROLLBAR_SPACE), expanded, this::toggle)
                 .fill(book.get());

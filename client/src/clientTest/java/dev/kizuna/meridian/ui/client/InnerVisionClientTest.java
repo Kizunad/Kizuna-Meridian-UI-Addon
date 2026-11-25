@@ -4,6 +4,7 @@ import dev.kizuna.inventoryui.client.ClientModule;
 import dev.kizuna.inventoryui.client.InspectionWindowProbe;
 import dev.kizuna.inventoryui.client.InventoryUiClient;
 import dev.kizuna.inventoryui.window.UiWindowManager.WindowState;
+import dev.kizuna.inventoryui.workspace.UiVersion;
 import dev.kizuna.meridian.progression.client.ClientProgression;
 import dev.kizuna.meridian.progression.client.ScrollScreen;
 import net.fabricmc.api.ClientModInitializer;
@@ -40,6 +41,7 @@ public final class InnerVisionClientTest implements ClientModInitializer {
     private CompletableFuture<Void> command;
     private BodyUiModule module;
     private WindowState window;
+    private final boolean classic = "classic".equals(System.getProperty("meridian.uiVersion"));
 
     @Override
     public void onInitializeClient() {
@@ -50,7 +52,7 @@ public final class InnerVisionClientTest implements ClientModInitializer {
             new SurfaceWindowJourney().register();
         } else if (System.getProperty("breath.width") != null) {
             new BreathWindowJourney().register();
-        } else if (System.getProperty("content.width") != null) {
+        } else if (System.getProperty("content.width") != null || System.getProperty("layout.width") != null) {
             new ContentWindowJourney().register();
         } else {
             ClientTickEvents.END_CLIENT_TICK.register(this::tick);
@@ -107,11 +109,15 @@ public final class InnerVisionClientTest implements ClientModInitializer {
         checkState(runtime.workspace().features("").stream()
                         .anyMatch(feature -> feature.id().equals("meridian_ui:body")),
                 "未解锁检视入口从菜单消失");
-        runtime.uiVersion(dev.kizuna.inventoryui.workspace.UiVersion.CLASSIC);
+        if (classic) {
+            runtime.uiVersion(UiVersion.CLASSIC);
+        } else {
+            checkState(runtime.uiVersion() == UiVersion.MODERN, "内观未使用缺省新版");
+        }
         runtime.openWorkspace();
         window = runtime.open("meridian_ui:body", null);
         checkState(InspectionWindowProbe.content(window.key()) instanceof LockedNotice, "未解锁没有显示锁定卡");
-        checkState(module.panel() == null, "未解锁仍创建体表检视");
+        checkState(module.panel() == null && module.surfacePanel() == null, "未解锁仍创建体表检视");
         next(Stage.READ);
     }
 
@@ -165,8 +171,17 @@ public final class InnerVisionClientTest implements ClientModInitializer {
         runtime.openWorkspace();
         window = runtime.open("meridian_ui:body", null);
         checkState(!(InspectionWindowProbe.content(window.key()) instanceof LockedNotice), "解锁后仍显示锁");
-        checkState(module.panel() != null, "解锁后未创建真实人体窗口");
-        module.panel().layer("skeleton");
+        if (classic) {
+            var panel = module.panel();
+            checkState(panel != null, "解锁后未创建经典检视窗口");
+            panel.layer("skeleton");
+        } else {
+            var panel = module.surfacePanel();
+            checkState(panel != null, "解锁后未创建体表窗口");
+            String layer = panel.layers().getFirst().id();
+            panel.layer(layer);
+            checkState(panel.visibleLayers().contains(layer), "体表窗口未显示已选图层");
+        }
         next(Stage.RESET);
     }
 
@@ -186,7 +201,8 @@ public final class InnerVisionClientTest implements ClientModInitializer {
             return;
         }
         command.join();
-        checkState(window.closed() && module.panel() == null, "重置后内观窗口或渲染资源仍在");
+        checkState(window.closed() && module.panel() == null && module.surfacePanel() == null,
+                "重置后内观窗口或渲染资源仍在");
         checkState(ClientProgression.canGather() && ClientProgression.canUseMiddleJiao(), "重置内观误撤其他卷");
         var reopened = InventoryUiClient.runtime().open("meridian_ui:body", null);
         checkState(InspectionWindowProbe.content(reopened.key()) instanceof LockedNotice, "重置后仍可打开体表");

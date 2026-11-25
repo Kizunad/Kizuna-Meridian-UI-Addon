@@ -12,8 +12,6 @@ import java.util.function.ToIntFunction;
  * 怎么办写在按钮和纳入量的悬浮提示里；一行排不下就折行，最多两行。
  */
 final class IntakeRejection {
-    private static final String PREFIX = "未纳入：";
-    private static final String BARREN = "此地没有灵气";
     private static final String OMISSION = "…";
     /** 最多占这么多行，再长的在末行收成省略号。 */
     static final int MAX_LINES = 2;
@@ -36,24 +34,32 @@ final class IntakeRejection {
     static String reason(FailureCode failure, GatheringEnvironment environment) {
         // 纳入量一直没涨时该写的那句：先看服务端报过的受阻，再看当地有没有灵气；都不是就不写（比如手动吐纳没在吸）。
         if (failure != FailureCode.FAILURE_CODE_UNSPECIFIED) {
-            return PREFIX + phrase(failure);
+            return WindowText.get("breath.rejection", "未纳入：%s", phrase(failure));
         }
         boolean barren = !environment.getAvailable() || environment.getConcentrationPerBlock() <= 0;
-        return barren ? PREFIX + BARREN : "";
+        if (barren) {
+            return WindowText.get("breath.rejection", "未纳入：%s", barrenReason());
+        }
+        return "";
+    }
+
+    private static String barrenReason() {
+        // 空地判定和服务端的环境失败码共用一句提示。
+        return WindowText.get("breath.barren", "此地没有灵气");
     }
 
     private static String phrase(FailureCode code) {
         // 和悬浮提示用同一组失败码，这里只说卡在哪。
         return switch (code) {
-            case CAPACITY_EXCEEDED -> "经脉已满";
-            case INSUFFICIENT_QI -> "此地灵气不够";
-            case ENVIRONMENT_BUDGET_EXCEEDED -> "此地灵气被占用";
-            case ENVIRONMENT_UNAVAILABLE -> BARREN;
-            case ENVIRONMENT_INTERVAL_INVALID -> "此地灵气一时接不上";
-            case MODULE_UNAVAILABLE, ROUTE_UNAVAILABLE -> "肺或经络失能";
-            case THROUGHPUT_EXCEEDED -> "经络来不及送";
-            case BODY_DEAD -> "身体已经死亡";
-            default -> "原因见按钮提示";
+            case CAPACITY_EXCEEDED -> WindowText.get("breath.rejection_full", "经脉已满");
+            case INSUFFICIENT_QI -> WindowText.get("breath.rejection_insufficient", "此地灵气不够");
+            case ENVIRONMENT_BUDGET_EXCEEDED -> WindowText.get("breath.rejection_busy", "此地灵气被占用");
+            case ENVIRONMENT_UNAVAILABLE -> barrenReason();
+            case ENVIRONMENT_INTERVAL_INVALID -> WindowText.get("breath.rejection_interval", "此地灵气一时接不上");
+            case MODULE_UNAVAILABLE, ROUTE_UNAVAILABLE -> WindowText.get("breath.rejection_disabled", "肺或经络失能");
+            case THROUGHPUT_EXCEEDED -> WindowText.get("breath.rejection_capacity", "经络来不及送");
+            case BODY_DEAD -> WindowText.get("breath.rejection_dead", "身体已经死亡");
+            default -> WindowText.get("breath.rejection_details", "原因见按钮提示");
         };
     }
 

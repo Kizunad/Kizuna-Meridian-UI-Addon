@@ -36,6 +36,7 @@ final class EnvironmentEmblem extends BaseUIComponent {
     static final double RICH_FROM = 1.2;
     /** 点徽记打开的小窗。 */
     static final String DETAIL_FEATURE = "meridian_ui:aura";
+    private static final int PERCENT = 100;
     private static final int MAX_MOTES = 6;
     private static final double ORBIT_MILLIS = 9000;
     private static final float DIM = 0.55f;
@@ -65,43 +66,59 @@ final class EnvironmentEmblem extends BaseUIComponent {
             tooltip(List.<Component>of());
             return;
         }
-        tooltip(List.of((Component) Component.literal(brief(environment)), Component.literal("点一下看详细数值")));
+        String hint = WindowText.get("aura.show", "点一下看详细数值");
+        tooltip(List.<Component>of(Component.literal(currentBrief()), Component.literal(hint)));
     }
 
     /** 现在悬浮里写的那句；还没有环境视图时是空串。 */
     String currentBrief() {
-        return environment == null ? "" : brief(environment);
+        // 还没有环境回执时不显示旧读数。
+        if (environment == null) {
+            return "";
+        }
+        return brief(environment, WindowText.current());
     }
 
     /** 悬浮的一句话，例如「寻常·偏木，约 0.80 元/格」。 */
-    static String brief(GatheringEnvironment environment) {
+    static String brief(GatheringEnvironment environment, WindowText words) {
+        // 倾向只取主要五行，具体比例放在明细里。
         if (!environment.getAvailable()) {
-            return "此地没有灵气可纳";
+            return words.format("aura.unavailable", "此地没有灵气可纳");
         }
         List<String> leading = leading(environment);
-        String bias = leading.isEmpty() ? "" : "·偏" + String.join("", leading.stream().map(NAMES::get).toList());
-        return String.format(Locale.ROOT, "%s%s，约 %.2f 元/格", level(environment), bias,
-                environment.getConcentrationPerBlock());
+        String bias = "";
+        if (!leading.isEmpty()) {
+            var names = leading.stream().map(id -> element(words, id)).toList();
+            String separator = words.format("aura.join", "");
+            bias = words.format("aura.bias", "·偏%s", String.join(separator, names));
+        }
+        String concentration = String.format(Locale.ROOT, "%.2f", environment.getConcentrationPerBlock());
+        return words.format("aura.brief", "%s%s，约 %s 元/格", level(environment, words), bias, concentration);
     }
 
     /** 点开后的明细：五行和无属性各多少、总量、浓度、每秒上限、档位分界。 */
-    static List<String> details(GatheringEnvironment environment) {
+    static List<String> details(GatheringEnvironment environment, WindowText words) {
+        // 各项使用同一份环境快照，保持总量与占比一致。
         if (!environment.getAvailable()) {
-            return List.of("只有主世界的地界有灵气。");
+            return List.of(words.format("aura.overworld", "只有主世界的地界有灵气。"));
         }
         var totals = totals(environment);
         double total = totals.values().stream().mapToDouble(Double::doubleValue).sum();
         var lines = new ArrayList<String>();
-        lines.add(String.format(Locale.ROOT, "此地灵气：%s", level(environment)));
+        lines.add(words.format("aura.level", "此地灵气：%s", level(environment, words)));
         for (String attribute : ORDER) {
             double amount = totals.getOrDefault(attribute, 0.0);
             double share = total > 0 ? amount / total : 0;
-            lines.add(String.format(Locale.ROOT, "%s %.0f 元（%.0f%%）", NAMES.get(attribute), amount, share * 100));
+            String units = String.format(Locale.ROOT, "%.0f", amount);
+            String percent = String.format(Locale.ROOT, "%.0f%%", share * PERCENT);
+            lines.add(words.format("aura.amount", "%s %s 元（%s）", element(words, attribute), units, percent));
         }
-        lines.add(String.format(Locale.ROOT, "总量 %.0f 元", total));
-        lines.add(String.format(Locale.ROOT, "浓度 %.2f 元/格", environment.getConcentrationPerBlock()));
-        lines.add(String.format(Locale.ROOT, "每秒最多纳 %.2f 元，在场的人共用", environment.getSupplyPerSecond()));
-        lines.add(String.format(Locale.ROOT, "分档：不到 %.1f 稀薄，%.1f 以上充盈", THIN_BELOW, RICH_FROM));
+        String concentration = String.format(Locale.ROOT, "%.2f", environment.getConcentrationPerBlock());
+        String supply = String.format(Locale.ROOT, "%.2f", environment.getSupplyPerSecond());
+        lines.add(words.format("aura.total", "总量 %s 元", String.format(Locale.ROOT, "%.0f", total)));
+        lines.add(words.format("aura.concentration", "浓度 %s 元/格", concentration));
+        lines.add(words.format("aura.supply", "每秒最多纳 %s 元，在场的人共用", supply));
+        lines.add(words.format("aura.thresholds", "分档：不到 %s 稀薄，%s 以上充盈", THIN_BELOW, RICH_FROM));
         return List.copyOf(lines);
     }
 
@@ -124,12 +141,20 @@ final class EnvironmentEmblem extends BaseUIComponent {
         return Math.max(0, Math.min(1, environment.getConcentrationPerBlock() / FULL_GLOW));
     }
 
-    private static String level(GatheringEnvironment environment) {
+    private static String element(WindowText words, String id) {
+        // 和经脉数据页使用相同的五行名称，旧版保留原有简称。
+        return words.format("data.element." + id.replace(':', '.'), NAMES.get(id));
+    }
+
+    private static String level(GatheringEnvironment environment, WindowText words) {
         // 档位和那一行文字用同一组分界。
         if (environment.getConcentrationPerBlock() < THIN_BELOW) {
-            return "稀薄";
+            return words.format("aura.thin", "稀薄");
         }
-        return environment.getConcentrationPerBlock() >= RICH_FROM ? "充盈" : "寻常";
+        if (environment.getConcentrationPerBlock() >= RICH_FROM) {
+            return words.format("aura.rich", "充盈");
+        }
+        return words.format("aura.normal", "寻常");
     }
 
     private static Map<String, Double> totals(GatheringEnvironment environment) {

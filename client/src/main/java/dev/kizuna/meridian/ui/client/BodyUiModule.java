@@ -446,10 +446,12 @@ public final class BodyUiModule implements ClientModule {
                     cultivationKey = null;
                 }
             });
-            return new LockedNotice("吐纳", UiErrors.GATHERING_LOCKED);
+            String title = WindowText.get("action.breathing", "吐纳");
+            String hint = WindowText.get("notice.breathing_locked", UiErrors.GATHERING_LOCKED);
+            return new LockedNotice(title, hint);
         }
         if (scene == null || body == null) {
-            return UIComponents.label(net.minecraft.network.chat.Component.literal(UiErrors.MISSING_BODY));
+            return UIComponents.label(net.minecraft.network.chat.Component.literal(UiErrors.missingBody()));
         }
         cultivationPanel = maker.apply(scene, this::controlBreathing);
         cultivationKey = openedKey;

@@ -124,12 +124,19 @@ final class OpeningPanel {
         this.view = view;
         diagram.update(view);
         arrange(root.width(), root.height());
-        String heading = title.isBlank() ? "经脉" : title;
+        String heading = title;
+        if (title.isBlank()) {
+            heading = WindowText.get("action.meridian", "经脉");
+        }
         var titleLabel = content.childById(LabelComponent.class, "selection-title");
         titleLabel.text(net.minecraft.network.chat.Component.literal(heading));
         updateText(statusSlot, statusText, view.getStatus(), "");
         String hint = error.isEmpty() ? view.getHint() : error;
-        updateText(feedbackSlot, feedbackText, error.isEmpty() ? "" : "操作未完成", hint);
+        String feedback = "";
+        if (!error.isEmpty()) {
+            feedback = WindowText.get("action.failed", "操作未完成");
+        }
+        updateText(feedbackSlot, feedbackText, feedback, hint);
         List<MeridianOperationMeter> conditions = conditions();
         var ids = conditions.stream().map(MeridianOperationMeter::getId).toList();
         if (!ids.equals(meterIds)) {

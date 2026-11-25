@@ -1,5 +1,7 @@
 package dev.kizuna.meridian.ui.client;
 
+import static dev.kizuna.meridian.ui.client.WindowText.get;
+
 import dev.kizuna.meridian.technique.fabric.client.TechniqueVolumeSourcesClient;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.ScrollDrop;
 import dev.kizuna.meridian.technique.protocol.pb.TechniqueMessages.VolumeKnower;
@@ -43,7 +45,7 @@ final class CodexSources {
             lines.add(knowerHint(volume, holders));
         }
         sources.stream().filter(VolumeSource::hasFoe).map(source -> text(source.getFoe().getOriginKey())).distinct()
-                .forEach(origin -> lines.add(text("codex.hint.origin_foe").replace("{出身}", origin)));
+                .map(CodexSources::originHint).forEach(lines::add);
         if (lines.isEmpty()) {
             return text("codex.hint.unknown");
         }
@@ -55,12 +57,27 @@ final class CodexSources {
         String find = common(volume) ? "_common" : "_rare";
         String realm = realmName(holders.getFirst().getRealmValue());
         if (holders.size() >= WIDE_SPREAD) {
-            return text("codex.hint.wide" + find).replace("{境界}", realm);
+            return realmHint("codex.hint.wide" + find, realm);
         }
         String share = holders.stream().allMatch(knower -> knower.getShare() >= EVERYONE) ? "everyone" : "some";
         var names = holders.stream().map(knower -> entityName(knower.getEntityType())).distinct().toList();
-        return text("codex.hint." + share + find).replace("{生人}", String.join("、", names))
-                .replace("{境界}", realm);
+        return namedHint("codex.hint." + share + find, names, realm, WindowText.current());
+    }
+
+    static String namedHint(String key, List<String> names, String realm, WindowText edition) {
+        // 新版按当前语言连接生人名，经典版沿用顿号。
+        String separator = edition.format("codex.separator", "、");
+        return realmHint(key, realm).replace("{entities}", String.join(separator, names));
+    }
+
+    static String realmHint(String key, String realm) {
+        // 列举生人和泛指各路生人的句式都写出境界。
+        return text(key).replace("{realm}", realm);
+    }
+
+    static String originHint(String origin) {
+        // 出身名已经按来源包的语言键解析。
+        return text("codex.hint.origin_foe").replace("{origin}", origin);
     }
 
     static List<VolumeKnower> holders(CodexCatalog.Volume volume, List<VolumeSource> sources) {
@@ -88,7 +105,7 @@ final class CodexSources {
         // 生物名跟着游戏语言走，客户端没有这种实体时保留中性说法。
         var id = Identifier.tryParse(entityType);
         if (id == null || !BuiltInRegistries.ENTITY_TYPE.containsKey(id)) {
-            return "生人";
+            return get("codex.person", "生人");
         }
         return BuiltInRegistries.ENTITY_TYPE.getValue(id).getDescription().getString();
     }

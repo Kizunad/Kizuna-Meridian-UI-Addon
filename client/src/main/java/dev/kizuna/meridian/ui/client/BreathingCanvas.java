@@ -219,13 +219,14 @@ public final class BreathingCanvas extends BaseUIComponent {
 
     /** 这会儿的操作提示。 */
     String hint() {
+        // 自动和手动吐纳接受的输入不同。
         if (!view.getActive()) {
-            return "中键旋转 · 滚轮缩放";
+            return WindowText.get("breath.rotate", "中键旋转 · 滚轮缩放");
         }
         if (view.getAutomatic()) {
-            return "自动吸呼中 · 中键旋转 · 滚轮缩放";
+            return WindowText.get("breath.automatic_hint", "自动吸呼中 · 中键旋转 · 滚轮缩放");
         }
-        return "左吸 · 右呼 · 中键旋转 · 滚轮缩放";
+        return WindowText.get("breath.manual_hint", "左吸 · 右呼 · 中键旋转 · 滚轮缩放");
     }
 
     private BodySceneRenderer.Scene breathingScene(double airRatio, long now) {
@@ -383,7 +384,8 @@ public final class BreathingCanvas extends BaseUIComponent {
         String instructions = "左键吸气，右键呼气，松开停气。\n"
                 + "中键旋转、滚轮缩放；近处灵气受气流影响更强。\n"
                 + "肺满时先呼气，留意耐力与精力。";
-        var lines = font.split(Component.literal(instructions), textWidth);
+        String tutorial = WindowText.get("breath.instructions", instructions);
+        var lines = font.split(Component.literal(tutorial), textWidth);
         int lineHeight = font.lineHeight + captions.lineGap;
         int left = x + captions.margin;
         int boxHeight = lines.size() * lineHeight + captions.padding * 2;

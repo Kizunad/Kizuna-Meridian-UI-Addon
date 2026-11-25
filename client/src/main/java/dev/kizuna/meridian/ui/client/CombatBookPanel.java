@@ -1,5 +1,7 @@
 package dev.kizuna.meridian.ui.client;
 
+import static dev.kizuna.meridian.ui.client.WindowText.get;
+
 import dev.kizuna.inventoryui.client.ClientRuntime;
 import dev.kizuna.inventoryui.client.WindowInputHandler;
 import dev.kizuna.inventoryui.theme.ThemeTokens;
@@ -66,11 +68,18 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
         this.windowKey = windowKey;
         content = UIModelLoader.get(Identifier.fromNamespaceAndPath("meridian_ui", "combat"))
                 .expandTemplate(FlowLayout.class, "combat-book", Map.of());
+        if (runtime.uiVersion() == dev.kizuna.inventoryui.workspace.UiVersion.MODERN) {
+            content.childById(LabelComponent.class, "library-title")
+                    .text(Component.translatable("meridian_ui.combat.learned"));
+            content.childById(LabelComponent.class, "detail-title")
+                    .text(Component.translatable("meridian_ui.combat.details"));
+        }
         library = content.childById(FlowLayout.class, "library");
         detail = content.childById(FlowLayout.class, "detail");
         slots = content.childById(FlowLayout.class, "slots");
         slots.gap(GAP);
-        var settings = dev.kizuna.meridian.ui.client.settings.SettingsWidgets.button(runtime, "姿态设置", () -> {
+        String label = get("settings.stance_button", "姿态设置");
+        var settings = dev.kizuna.meridian.ui.client.settings.SettingsWidgets.button(runtime, label, () -> {
             // 通过公开接口定位同一设置窗口，不为功法页另建配置副本。
             var result = dev.kizuna.meridian.ui.api.settings.MeridianSettings.open(
                     dev.kizuna.meridian.ui.client.settings.combat.CombatSettingsProvider.ID);
@@ -91,8 +100,9 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
 
     private static LabelComponent stanceHint() {
         // 常驻一行：配好槽位以后怎么放出来。键名按玩家实际绑定显示。
-        var text = Component.literal("按 ").append(Component.keybind(STANCE_KEY))
-                .append(" 进入战斗架势，再按槽位的数字键施放");
+        var binding = Component.keybind(STANCE_KEY);
+        var text = Component.literal(get("combat.stance_hint", "按 %s 进入战斗架势，再按槽位的数字键施放",
+                binding.getString()));
         var hint = UIComponents.label(text);
         hint.id("stance-hint");
         hint.shadow(false /* shadow */);
@@ -188,7 +198,7 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
         selection.cancelDrag();
         library.clearChildren();
         if (libraryEntries.isEmpty()) {
-            library.child(label("尚无已学功法", paper(ThemeTokens.MUTED_TEXT)));
+            library.child(label(get("combat.empty", "尚无已学功法"), paper(ThemeTokens.MUTED_TEXT)));
             return;
         }
         var groups = new TreeMap<String, List<KnownTechnique>>();
@@ -233,7 +243,7 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
             title = bookName + " · " + title;
         }
         if (title.isBlank()) {
-            title = "未命名卷";
+            title = get("combat.untitled", "未命名卷");
         }
         var heading = label(title, paper(ThemeTokens.ACCENT));
         heading.maxWidth(Math.max(1, pageWidth - TITLE_HEIGHT - SCROLLBAR_SPACE));
@@ -258,7 +268,7 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
         // 长文始终在右页滚动，不挤走十槽。
         detail.clearChildren();
         if (displayedDetail == null) {
-            detail.child(label("选择左页功法\n查看简介与已知条件", paper(ThemeTokens.MUTED_TEXT)));
+            detail.child(label(get("combat.select", "选择左页功法\n查看简介与已知条件"), paper(ThemeTokens.MUTED_TEXT)));
             return;
         }
         var entry = displayedDetail;
@@ -268,7 +278,7 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
         detail.child(label(name(entry).getString(), paper(ThemeTokens.ACCENT)));
         String description = entry.getDescription();
         if (description.isBlank()) {
-            description = "暂无功法简介";
+            description = get("combat.no_description", "暂无功法简介");
         }
         detail.child(label(description, paper(ThemeTokens.TEXT)));
         if (entry.getDetailsCount() > 0) {
@@ -279,11 +289,11 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
         } else {
             // 旧服务端不发明细，只有冷却可写。
             long cooldown = entry.getCooldownTotalMillis();
-            detail.child(label("冷却：" + (double) cooldown / MILLIS_PER_SECOND + " 秒",
+            detail.child(label(get("combat.cooldown", "冷却：%s 秒", (double) cooldown / MILLIS_PER_SECOND),
                     paper(ThemeTokens.MUTED_TEXT)));
         }
         if (!entry.getUnavailableReason().isBlank()) {
-            detail.child(label("当前不可用：" + entry.getUnavailableReason(),
+            detail.child(label(get("combat.unavailable", "当前不可用：%s", entry.getUnavailableReason()),
                     paper(ThemeTokens.TEXT)));
         }
     }
@@ -362,7 +372,7 @@ final class CombatBookPanel extends FlowLayout implements WindowInputHandler, Au
         // 失败通过游戏通知说明，成功直接反映在槽位中。
         if (result.status() != CombatSlotAccess.Status.SAVED) {
             SystemToast.addOrUpdate(Minecraft.getInstance().gui.toastManager(), CONFIGURATION_ERROR,
-                    Component.literal("功法配置"), Component.literal(result.message()));
+                    Component.literal(get("combat.title", "功法配置")), Component.literal(result.message()));
         }
     }
 

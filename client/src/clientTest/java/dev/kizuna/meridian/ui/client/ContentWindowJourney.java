@@ -10,9 +10,12 @@ import dev.kizuna.inventoryui.window.UiWindowManager.Rect;
 import dev.kizuna.inventoryui.window.UiWindowManager.WindowState;
 import dev.kizuna.inventoryui.workspace.UiVersion;
 import dev.kizuna.meridian.progression.client.ClientProgression;
+import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
+import dev.kizuna.meridian.protocol.pb.GatheringMessages.GatheringEnvironment;
 import dev.kizuna.meridian.ui.api.MeridianSceneExtension;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -36,6 +39,7 @@ public final class ContentWindowJourney {
     private static final String OVERVIEW = PREFIX + "overview";
     private static final String BREATH = PREFIX + "cultivation";
     private static final String PRACTICE = PREFIX + "practice";
+    private static final String FILL_QI = "meridian qi fill";
     private static final Set<String> LEGACY = Set.of(SURFACE, BREATH, PRACTICE);
     private static final List<String> WINDOWS = List.of(SURFACE, PREFIX + "muscles", PREFIX + "organs",
             PREFIX + "meridians", BREATH, PRACTICE, OVERVIEW, PREFIX + "aura", PREFIX + "combat",
@@ -51,7 +55,16 @@ public final class ContentWindowJourney {
     private static final int TOOLBAR = 28;
     private static final int SPAWN_SETTLE = 140;
     private static final int HALF_CROSSHAIR = 8;
-    private enum Stage { JOIN, MIGRATE, OPEN, EXPANDED, SMALL, TABLE, PAIR, HUD, HIDDEN, OFFLINE, REJOIN, DONE }
+    private enum Stage { JOIN, MIGRATE, LAYOUT_OPEN, LAYOUT_SHOT, OPEN, EXPANDED, SMALL, TABLE, PAIR,
+        HUD, HIDDEN, OFFLINE, REJOIN, DONE }
+    private final Integer layoutWidth = Integer.getInteger("layout.width");
+    private final List<String> layoutIssues = new ArrayList<>();
+    private final boolean fixedReadings = Boolean.getBoolean("layout.fixedReadings");
+    private final String bodyRecording = System.getProperty("layout.bodyRecording");
+    private BodySnapshot recordedBody;
+    private boolean restoreMotion;
+    private List<String> features;
+    private WindowState operationParent;
     private Stage stage = Stage.JOIN;
     private int ticks;
     private int since;
@@ -74,11 +87,15 @@ public final class ContentWindowJourney {
     }
 
     private void tick(Minecraft c) {
+        // 客户端 tick 与延迟截帧使用同一阶段，避免读取尚未绘制的界面。
         if (stage == Stage.DONE) {
             return;
         }
         try {
             checkState(++ticks < TIMEOUT, "验收超时 %s %s", stage, index);
+            if (fixedReadings && stage == Stage.LAYOUT_SHOT) {
+                stabilizeFrame(c, features.get(index));
+            }
             if (pendingCapture != null) {
                 flushCapture(c);
                 return;
@@ -89,6 +106,8 @@ public final class ContentWindowJourney {
             switch (stage) {
                 case JOIN -> join(c);
                 case MIGRATE -> migrate(c);
+                case LAYOUT_OPEN -> openLayout(c);
+                case LAYOUT_SHOT -> captureLayout(c);
                 case OPEN -> open(c);
                 case EXPANDED -> expanded(c);
                 case SMALL -> small(c);
@@ -114,26 +133,57 @@ public final class ContentWindowJourney {
         module = FabricLoader.getInstance().getEntrypoints("kizuna_inventory_ui", ClientModule.class).stream()
                 .filter(BodyUiModule.class::isInstance).map(BodyUiModule.class::cast).findFirst().orElseThrow();
         runtime = InventoryUiClient.runtime();
-        runtime.uiVersion(UiVersion.MODERN);
+        if (layoutWidth == null) {
+            runtime.uiVersion(UiVersion.MODERN);
+        } else if ("classic".equals(System.getProperty("meridian.uiVersion"))) {
+            runtime.uiVersion(UiVersion.CLASSIC);
+            runtime.background("kiui:night_meridian");
+            if (fixedReadings && !EffectSettings.reducedMotion()) {
+                EffectSettings.toggleMotion();
+                restoreMotion = true;
+            }
+        } else {
+            checkState(runtime.uiVersion() == UiVersion.MODERN, "新配置没有使用新版");
+        }
         c.getTutorial().setStep(net.minecraft.client.tutorial.TutorialSteps.NONE);
         width = Integer.getInteger("content.width", SMALL_WIDTH);
+        if (layoutWidth != null) {
+            width = layoutWidth;
+        }
         int height = width == SMALL_WIDTH ? SMALL_HEIGHT : LARGE_HEIGHT;
         GLFW.glfwSetWindowSize(c.getWindow().handle(), width, height);
         c.options.guiScale().set(GUI_SCALE);
         c.resizeGui();
-        var server = c.getSingleplayerServer();
-        var id = c.player.getUUID();
-        prepared = CompletableFuture.runAsync(() -> {
+        prepared = prepareBody(c);
+        next(Stage.MIGRATE);
+    }
+
+    private CompletableFuture<Void> prepareBody(Minecraft client) {
+        // 用正式服务器命令设置每种窗口都能读取的同一具身体。
+        var commands = new ArrayList<>(List.of("meridian progression unlock",
+                "meridian opening complete @s left_lung_meridian"));
+        if (fixedReadings) {
+            // 两次截帧在同一位置读环境，空库存没有随时间结算的在途量。
+            commands.add("tp @s -6454316.5 -60 2821320.5");
+        } else {
+            commands.add(FILL_QI);
+        }
+        commands.addAll(List.of("gamemode survival @s", "damage @s 3 minecraft:fall",
+                "meridian debug fatigue set @s left_biceps_brachii 0.75",
+                "effect give @s minecraft:speed infinite"));
+        return runCommands(client, commands);
+    }
+
+    private CompletableFuture<Void> runCommands(Minecraft client, List<String> commands) {
+        var server = client.getSingleplayerServer();
+        var id = client.player.getUUID();
+        return CompletableFuture.runAsync(() -> {
             var source = server.getPlayerList().getPlayer(id).createCommandSourceStack()
                     .withPermission(LevelBasedPermissionSet.OWNER);
-            for (String command : List.of("meridian progression unlock",
-                    "meridian opening complete @s left_lung_meridian", "meridian qi fill", "gamemode survival @s",
-                    "damage @s 3 minecraft:fall", "meridian debug fatigue set @s left_biceps_brachii 0.75",
-                    "effect give @s minecraft:speed infinite")) {
+            for (String command : commands) {
                 server.getCommands().performPrefixedCommand(source, command);
             }
         }, server);
-        next(Stage.MIGRATE);
     }
 
     private Set<String> hudFeatures(Minecraft c) {
@@ -155,6 +205,18 @@ public final class ContentWindowJourney {
             return;
         }
         prepared.join();
+        if (layoutWidth != null) {
+            // 从实际装配目录逐项开窗，每项单独截取默认位置。
+            features = new ArrayList<>(runtime.catalog().features().keySet().stream().sorted().toList());
+            if (fixedReadings && features.remove(BodyFeature.OPERATION.id)) {
+                // 操作窗需要真元，其余窗口先用同一份空库存拍完。
+                features.add(BodyFeature.OPERATION.id);
+            }
+            runtime.motion(false /* enabled */);
+            runtime.openWorkspace();
+            next(Stage.LAYOUT_OPEN);
+            return;
+        }
         var migrated = runtime.pinnedCompacts();
         checkState(migrated.equals(LEGACY), "旧锁映射错误 %s", migrated);
         if (hudFeatures(c).size() != LEGACY.size()) {
@@ -191,6 +253,118 @@ public final class ContentWindowJourney {
             window = runtime.open(id, null);
         }
         next(Stage.EXPANDED);
+    }
+
+    private void openLayout(Minecraft c) {
+        // 每次都从空工作台开始，测到的是该入口在当前分辨率下的缺省矩形。
+        if (index == features.size()) {
+            checkState(layoutIssues.isEmpty(), "窗口布局异常 %s", layoutIssues);
+            finish(c, null);
+            return;
+        }
+        String id = features.get(index);
+        if (id.equals(BodyFeature.OPERATION.id)) {
+            // 先从经脉窗订阅可开拓目标，权威目录到达后操作入口才可用。
+            if (operationParent == null) {
+                operationParent = runtime.open(BodyFeature.MERIDIAN.id, null);
+                if (fixedReadings) {
+                    prepared = runCommands(c, List.of(FILL_QI));
+                }
+            }
+            if (!prepared.isDone() || !runtime.workspace().canOpen(id)) {
+                return;
+            }
+            prepared.join();
+        }
+        window = runtime.open(id, null);
+        next(Stage.LAYOUT_SHOT);
+    }
+
+    private void stabilizeFrame(Minecraft client, String feature) throws java.io.IOException {
+        client.gui.toastManager().clear();
+        if (bodyRecording != null && (feature.equals("meridian_human_ui:reserves")
+                || feature.equals(BodyFeature.MERIDIAN.id) || feature.equals(PRACTICE))) {
+            replayBody();
+        }
+        if (feature.equals("bs3d:open")) {
+            // 背包人台从本地玩家的 tickCount 取待机摆臂相位。
+            client.player.tickCount = SPAWN_SETTLE;
+        } else if (feature.equals(BREATH)) {
+            showFixedBreath();
+        }
+    }
+
+    private void replayBody() throws java.io.IOException {
+        // 重放同一帧的实际库存，让储备读数和随库存变化的经脉亮度使用相同输入。
+        var live = module.snapshot();
+        if (recordedBody == null) {
+            Path file = Path.of(bodyRecording);
+            if (Files.exists(file)) {
+                recordedBody = BodySnapshot.parseFrom(Files.readAllBytes(file));
+            } else {
+                Files.write(file, live.toByteArray(), java.nio.file.StandardOpenOption.CREATE_NEW);
+                recordedBody = live;
+            }
+        }
+        var frame = recordedBody.toBuilder()
+                .setId(live.getId())
+                .setRevision(live.getRevision())
+                .build();
+        module.update(frame);
+    }
+
+    private void showFixedBreath() {
+        // 固定空地的读数，不让服务端随机粒子与徽记轨道改变两次截帧的差值。
+        var actual = module.gatheringView();
+        if (actual != null && actual.hasBreathing()) {
+            var breath = actual.getBreathing().toBuilder()
+                    .clearParticles()
+                    .setAirLiters(0)
+                    .setCapacityLiters(0)
+                    .setStaminaRatio(1)
+                    .setAttentionRatio(1)
+                    .build();
+            var frame = actual.toBuilder()
+                    .setBreathing(breath)
+                    .setEnvironment(GatheringEnvironment.getDefaultInstance())
+                    .build();
+            module.cultivationPanel().update(frame, false /* pending */, "");
+        }
+    }
+
+    private void captureLayout(Minecraft c) {
+        String id = features.get(index);
+        if (!capture(c, id.replace(':', '-') + "-expanded")) {
+            return;
+        }
+        Rect bounds = window.bounds();
+        System.out.println("WINDOW_LAYOUT " + width + " " + id + " " + bounds);
+        if (runtime.uiVersion() == UiVersion.MODERN
+                && (bounds.y() < TOOLBAR || bounds.y() + bounds.height() > c.gui.screen().height)) {
+            layoutIssues.add(id + " " + bounds);
+        }
+        if (id.equals(BodyFeature.MERIDIAN.id)) {
+            // 两个真实页签用绘制时的当前语言取词。
+            var panel = module.meridianPanel().root();
+            checkState(panel.childById(MeridianTab.class, "meridian-tab-scene") != null
+                    && panel.childById(MeridianTab.class, "meridian-tab-data") != null, "经脉窗缺页签");
+            String scene = DataText.get("tab.scene");
+            String data = DataText.get("tab.data");
+            String language = System.getProperty("layout.language", "zh_cn");
+            if (language.equals("en_us")) {
+                checkState(scene.equals("Meridians") && data.equals("Data"), "英文经脉页签错误 %s / %s", scene, data);
+            } else {
+                checkState(scene.equals("经脉") && data.equals("数据"), "中文经脉页签错误 %s / %s", scene, data);
+            }
+            System.out.println("MERIDIAN_TABS " + language + " " + scene + " / " + data);
+        }
+        runtime.workspace().windows().close(window.key());
+        if (operationParent != null) {
+            runtime.workspace().windows().close(operationParent.key());
+            operationParent = null;
+        }
+        index++;
+        next(Stage.LAYOUT_OPEN);
     }
 
     private void clickToggle(Minecraft c) {
@@ -440,6 +614,9 @@ public final class ContentWindowJourney {
 
     private void finish(Minecraft c, String failure) {
         stage = Stage.DONE;
+        if (restoreMotion) {
+            EffectSettings.toggleMotion();
+        }
         try {
             Files.writeString(Path.of("../inner-vision-results.txt"),
                     "success=" + (failure == null) + "\nfailure=" + failure + "\n");

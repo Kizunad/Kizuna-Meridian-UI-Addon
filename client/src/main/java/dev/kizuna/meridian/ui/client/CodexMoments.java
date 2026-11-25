@@ -1,5 +1,7 @@
 package dev.kizuna.meridian.ui.client;
 
+import static dev.kizuna.meridian.ui.client.WindowText.get;
+
 import dev.kizuna.meridian.technique.fabric.client.TechniqueScrollClient;
 import dev.kizuna.meridian.technique.server.TechniqueScrollCatalog.Scroll;
 import net.minecraft.client.Minecraft;
@@ -56,7 +58,8 @@ final class CodexMoments {
         int count = (int) book.get().volumes().stream().filter(volume -> learned.contains(volume.id())).count();
         String line = scroll.displayName() + "　" + count + "/" + total;
         var icon = catalog().volume(volumeId).map(CodexCatalog.Volume::icon).orElseThrow();
-        Minecraft.getInstance().gui.toastManager().addToast(new CodexToast(icon, "功法谱 · 新添一卷", line));
+        String heading = get("codex.new_volume", "功法谱 · 新添一卷");
+        Minecraft.getInstance().gui.toastManager().addToast(new CodexToast(icon, heading, line));
         Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(LIT_SOUND, LIT_PITCH, LIT_VOLUME));
         FRESH.put(volumeId, 0L);
     }

@@ -52,6 +52,7 @@ public final class BreathRejectClientTest implements ClientModInitializer {
     private CompletableFuture<Void> command;
     private BodyUiModule module;
     private WindowState window;
+    private boolean startClicked;
     private int screenshots;
     private int firstWritten = -1;
     private String written = "";
@@ -125,6 +126,7 @@ public final class BreathRejectClientTest implements ClientModInitializer {
         runtime.uiVersion(BreathClipTools.version());
         runtime.openWorkspace();
         window = runtime.open("meridian_ui:cultivation", null);
+        startClicked = false;
         next(after);
     }
 
@@ -134,17 +136,21 @@ public final class BreathRejectClientTest implements ClientModInitializer {
         if (module.cultivationPanel() == null || view == null || ticks - stageTick < SETTLE_TICKS) {
             return;
         }
-        int waited = ticks - stageTick - SETTLE_TICKS;
-        if (waited == 0 && !view.getBreathing().getAutomatic()) {
-            BreathClipTools.click(module, "breathing-automatic");
-        } else if (waited == SETTLE_TICKS / 2) {
-            BreathClipTools.click(module, "breathing-start");
-        }
-        if (waited < SETTLE_TICKS) {
+        var breath = view.getBreathing();
+        if (startClicked) {
+            if (breath.getActive() && breath.getAutomatic()) {
+                next(after);
+            }
             return;
         }
-        checkState(view.getBreathing().getActive(), "点了开始，吐纳没有开始");
-        next(after);
+        if (!breath.getAvailable() || breath.getActive()) {
+            return;
+        }
+        if (!breath.getAutomatic()) {
+            BreathClipTools.click(module, "breathing-automatic");
+        }
+        BreathClipTools.click(module, "breathing-start");
+        startClicked = true;
     }
 
     private void barren(Minecraft client) {

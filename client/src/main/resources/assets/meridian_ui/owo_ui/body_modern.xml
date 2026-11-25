@@ -5,7 +5,7 @@
             <flow-layout direction="vertical">
                 <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
                 <children>
-                    <label id="body-title"><text>检视</text><color>#FFE8D9AD</color></label>
+                    <label id="body-title"><text translate="true">meridian_ui.inspection.title</text><color>#FFE8D9AD</color></label>
                     <scroll id="layers-scroll" direction="horizontal">
                         <flow-layout id="layers" direction="ltr-text-flow">
                             <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
@@ -23,13 +23,13 @@
                             <children>
                                 <label id="information">
                                     <sizing><horizontal method="fill">100</horizontal><vertical method="content">0</vertical></sizing>
-                                    <text>点击模型查看介绍与数值</text><color>#FFD3DFDB</color>
+                                    <text translate="true">meridian_ui.inspection.select</text><color>#FFD3DFDB</color>
                                 </label>
                             </children>
                         </flow-layout>
                         <sizing><horizontal method="fill">100</horizontal><vertical method="fill">100</vertical></sizing>
                     </scroll>
-                    <label id="body-hint"><text>左键选中 · 拖动 · 滚轮 · 中键复位</text><color>#FF92AFB0</color></label>
+                    <label id="body-hint"><text translate="true">meridian_ui.inspection.hint</text><color>#FF92AFB0</color></label>
                 </children>
             </flow-layout>
         </body-panel>

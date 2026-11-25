@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Util;
 
@@ -68,7 +69,8 @@ final class ModernCultivationPanel implements CultivationPanel {
         canvas = new BreathingCanvas(scene, sender);
         canvas.captions(BreathingCanvas.Captions.TIGHT);
         session = new BreathingSession(canvas, sender);
-        automatic = new ModernLayerToggle("自动", session::automaticSelected, session::toggleAutomatic).compact();
+        automatic = new ModernLayerToggle(I18n.get("meridian_ui.breath.automatic"),
+                session::automaticSelected, session::toggleAutomatic).compact();
         automatic.id("breathing-automatic");
         action = new ActionRow(session::actionLabel, session::canAct, session::act);
         action.id("breathing-start");
@@ -280,21 +282,28 @@ final class ModernCultivationPanel implements CultivationPanel {
 
     /** 余力一行现在写的和画的；自动吐纳只看呼吸耐力，条上标出暂停线和恢复线。 */
     BreathSheet.Reserve reserve() {
+        // 手动吐纳显示总余力，自动吐纳显示耐力及调节线。
         var summary = BreathSummary.of(breath);
         if (!breath.getAutomatic()) {
-            return new BreathSheet.Reserve("余力", summary.reservePercent(), summary.reserve(), List.of());
+            String label = I18n.get("meridian_ui.breath.reserve");
+            return new BreathSheet.Reserve(label, summary.reservePercent(), summary.reserve(), List.of());
         }
-        return new BreathSheet.Reserve("呼吸耐力", summary.reservePercent(), summary.reserve(),
+        String label = I18n.get("meridian_ui.breath.stamina");
+        return new BreathSheet.Reserve(label, summary.reservePercent(), summary.reserve(),
                 BreathSheet.automaticMarks(breath.getAutomaticMinimumStaminaRatio(),
                         breath.getAutomaticResumeStaminaRatio()));
     }
 
     String airText() {
-        return BreathSummary.of(breath).airLabel();
+        // 空气量和摘要使用同一比例。
+        String percent = CompactNumbers.percent(BreathSummary.of(breath).air());
+        return I18n.get("meridian_ui.breath.air", percent);
     }
 
     String intakeText() {
-        return "纳入 " + BreathSummary.of(breath).intakeAmount();
+        // 累计纳入量沿用同一读数，标签随语言切换。
+        return I18n.get("meridian_ui.breath.intake",
+                BreathSummary.of(breath).intakeAmount());
     }
 
     /** 主按钮现在写的字，和勾了自动以后常显的说明占几行；验收用。 */
@@ -340,6 +349,7 @@ final class ModernCultivationPanel implements CultivationPanel {
 
     @Override
     public void update(GatheringView view, boolean pending, String error) {
+        // 重复回执更新同一组控件；断开时清除上一次读数。
         session.update(view, pending);
         requestError = error;
         GatheringEnvironment place = null;
@@ -354,7 +364,7 @@ final class ModernCultivationPanel implements CultivationPanel {
             breath = BreathingView.getDefaultInstance();
             environment = GatheringEnvironment.getDefaultInstance();
             stall.observe(breath, Util.getMillis());
-            String unavailable = UiErrors.BREATHING_UNAVAILABLE;
+            String unavailable = I18n.get("meridian_ui.notice.breathing_unavailable");
             if (!error.isEmpty()) {
                 unavailable = error;
             }

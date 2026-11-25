@@ -65,7 +65,7 @@ final class OpeningDiagram extends BaseUIComponent {
             double angle = now / NANOS_PER_SECOND / ORBIT_SECONDS * Math.TAU;
             dot(context, new Center(centerX, centerY), angle, MeridianTheme.color(ThemeTokens.ACCENT));
         }
-        String caption = "经脉状态";
+        String caption = WindowText.get("action.meridian_status", "经脉状态");
         if (!primary.getId().isEmpty()) {
             caption = String.format(Locale.ROOT, "%s  %.0f%%", primary.getLabel(), primary.getFraction() * FULL);
         }
