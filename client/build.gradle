@@ -40,7 +40,11 @@ dependencies {
 test { useJUnit() }
 processResources {
     inputs.property 'version', project.version
-    filesMatching('fabric.mod.json') { expand version: project.version }
+    def preserveJsonEscapes = true
+    inputs.property 'preserveJsonEscapes', preserveJsonEscapes
+    filesMatching('fabric.mod.json') {
+        expand([version: project.version]) { escapeBackslash = preserveJsonEscapes }
+    }
 }
 
 // 开发运行固定使用完整装配；游戏内整体验收在 Human-UI 的整合服 smoke 中执行。

@@ -3,7 +3,13 @@
   "id": "meridian_ui",
   "version": "${version}",
   "name": "Kizuna's Meridian UI Addon",
-  "description": "通用身体模型、分层选择与状态展示",
+  "contact": {
+    "homepage": "https://github.com/Kizunad/Kizuna-Meridian-UI-Addon",
+    "sources": "https://github.com/Kizunad/Kizuna-Meridian-UI-Addon",
+    "issues": "https://github.com/Kizunad/Kizuna-Meridian-UI-Addon/issues"
+  },
+  "icon": "assets/meridian_ui/icon.png",
+  "description": "Inspect a body's layers and select individual parts to see their condition.\n逐层查看身体模型，选中部位即可查看其状态。",
   "authors": ["Kizunad"],
   "license": "PolyForm-Noncommercial-1.0.0",
   "environment": "client",
@@ -21,9 +27,9 @@
     "fabric-api": "*",
     "owo": "0.13.1+26.2",
     "meridian_framework": "*",
-    "kizuna_inventory_ui": "0.1.0-SNAPSHOT",
-    "meridian_human_ui": "0.1.0-SNAPSHOT",
-    "meridian_human_host": "0.1.0-SNAPSHOT",
+    "kizuna_inventory_ui": "0.1.0",
+    "meridian_human_ui": "0.1.0",
+    "meridian_human_host": "0.1.0",
     "kizuna_players_animation": "*"
     ,"meridian_progression_client": "*",
     "meridian_combat": "*"
